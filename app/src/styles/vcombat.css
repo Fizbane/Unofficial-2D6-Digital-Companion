@@ -1,0 +1,34 @@
+/* 2D6 Void Combat (tools/void/combat.ts). The shared fight layout (.combat-face, .foe, .attack-card,
+   .man-grid, .combat-log, .cb-list) comes from combat.css; these are the Void additions. */
+
+/* rule notes (UNCLEAR readings) */
+.vc-rule { display: flex; gap: var(--space-1); align-items: flex-start; margin: var(--space-2) 0 0; font: 0.76rem/1.45 var(--font-ui); color: var(--muted); }
+.vc-rule .icon { flex: none; margin-top: 2px; color: var(--accent); }
+.vc-small { margin: var(--space-1) 0; font: 0.88rem/1.45 var(--font-ui); }
+.vc-warn { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; font: 0.85rem/1.4 var(--font-ui); color: color-mix(in srgb, var(--danger) 75%, var(--ink)); }
+.vc-effect { color: var(--muted); }
+
+/* setup */
+.vc-conds { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-2); }
+.vc-check { display: flex; align-items: flex-start; gap: var(--space-2); font: 0.88rem/1.4 var(--font-ui); cursor: pointer; }
+.vc-check input { margin-top: 3px; accent-color: var(--accent); }
+.vc-turrets { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.vc-turrets .eyebrow { margin: 0 var(--space-1) 0 0; }
+.vc-foe-ctl { display: grid; gap: var(--space-1); margin-top: var(--space-2); }
+.vc-mini { display: inline-flex; align-items: center; gap: var(--space-2); font: 0.85rem var(--font-ui); }
+.vc-mini .stepper-ctl { display: inline-flex; width: auto; }
+.vc-mini .stepper-ctl button { width: 26px; height: 26px; display: grid; place-items: center; background: var(--surface-solid); border: var(--hairline); color: var(--ink); }
+.vc-mini .stepper-ctl button:hover { color: var(--accent); }
+.vc-badges { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
+.vc-badges .badge { font-size: 0.72rem; }
+
+/* weapons, settings, throws, stims */
+.vc-weapons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+.vc-weapons .chip { min-height: 2.2rem; }
+.vc-weapons .chip[aria-pressed="true"], .vc-weapons .chip.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--glow); }
+
+@media (max-width: 640px) {
+  .vc-conds { grid-template-columns: 1fr; }
+  .vcombat-page .combat-face { grid-template-columns: 1fr; }
+  .vcombat-page .combat-face .vs { justify-self: center; }
+}

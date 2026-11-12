@@ -1,0 +1,61 @@
+# Unofficial 2D6 Digital
+
+**2D6 Companion** is an unofficial, fan-made play aid for the **2D6 Dungeon**, **2D6 Realm** and **2D6 Void** tabletop games. It gives you a searchable rules reference, clickable roll tables with 3D dice, and play tools that follow the books' flowcharts: dungeon and Dark Hulk turns, combat, character sheets, maps, a journal and more.
+
+> This is a fan project. It is not made, endorsed or supported by the publisher of 2D6 Dungeon and 2D6 Void. Please buy the books from the publisher: the app needs them.
+
+## The books are not included
+
+The app ships only free content and the structure needed to find things in a book: no paid book text. To use the paid books (the Tables Codex, Realm and 2D6 Void), open **your own PDF** in Settings → Books. It is read on your device only and never uploaded, and the app keeps just what it needs, so you only do this once per device.
+
+## Get it
+
+### Windows desktop app
+
+Download the newest installer from **[Releases](https://github.com/Fizbane/Unofficial-2D6-Digital/releases/latest)**:
+
+- `2D6-Companion-Setup-<version>.exe` installs it with a Start-menu shortcut, and updates itself (it asks first).
+- `2D6-Companion-Portable-<version>.exe` is a single file that runs without installing.
+
+The files aren't code-signed, so Windows SmartScreen may warn the first time: choose **More info → Run anyway**. Everything works offline.
+
+### Run it from the source (any computer with a browser)
+
+You need [Git](https://git-scm.com/) and [Node.js](https://nodejs.org/) 24 or newer.
+
+```
+git clone https://github.com/Fizbane/Unofficial-2D6-Digital.git
+cd Unofficial-2D6-Digital
+npm --prefix app install
+npm --prefix app run dev
+```
+
+Then open http://localhost:5173. To use it on a tablet or phone on the same Wi-Fi, open the "Network" address it prints (Windows may ask you to allow Node through the firewall). Leave that window running while you play; press Ctrl+C in it to stop.
+
+## Updates
+
+Settings → **Updates** shows your version and has a **Check for updates** button; the app also checks once a day when it opens (you can turn that off). Nothing is downloaded until you say so.
+
+- **Installed desktop app:** downloads the new version, then restarts into it.
+- **Portable .exe:** opens the download page; use the new file in place of the old one.
+- **Run from the source:** **Update now** runs `git pull` for you (when you haven't changed any files). Then stop the app and start it again.
+
+## Your saves
+
+Characters, maps, notes, the journal and settings are saved on your device only: in the browser you use, or in the desktop app. Settings → **Backup** exports everything to one file, and **Automatic backups** can copy it to a folder (pick one inside OneDrive, Google Drive or iCloud Drive to keep a copy in the cloud). Moving between the browser and the desktop app: export in one, import in the other.
+
+## Guide
+
+The [guide](docs/wiki/Home.md) walks through the interface, the Dungeon and Void tools, the maps, achievements and the journal, and the themes and settings.
+
+## For developers
+
+```
+npm --prefix app test          # unit tests
+npm --prefix app run build     # production build into app/dist
+npx --prefix app install-electron   # once, to run the desktop app from source
+npm --prefix app run desktop   # build, then open it in the desktop wrapper
+npm --prefix app run dist:win  # Windows installer and portable .exe into app/release
+```
+
+The build ends with `check-dist`, which makes sure no book text is in the output. Its full text scan needs a phrase list that is not part of this repo, so here it prints a warning and runs only its structural checks.

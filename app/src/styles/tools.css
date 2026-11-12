@@ -1,0 +1,169 @@
+/* Shared play-tool controls (moved from style.css; restyled in Tasks 12-14).
+   .panel boxes are scoped to tab pages so they don't style the shell's right panel. */
+.icon-btn {
+  background: none; border: 1px solid transparent; color: var(--ink); font-size: 1.1rem;
+  min-width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--line); }
+a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.field { display: grid; gap: 3px; font-size: 0.8rem; color: var(--muted); }
+.field input, .field select, .field textarea, .stepper input, .rows input, .rows select {
+  font: 0.95rem var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; min-width: 0;
+}
+.field textarea { min-height: 70px; resize: vertical; }
+.stepper { display: grid; gap: 3px; font-size: 0.8rem; color: var(--muted); }
+.stepper-ctl { display: flex; align-items: stretch; }
+.stepper-ctl input { text-align: center; border-radius: 0; width: 100%; -moz-appearance: textfield; }
+.stepper-ctl input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.stepper-ctl button { width: 36px; flex-shrink: 0; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 1.1rem; cursor: pointer; }
+.stepper-ctl button:first-child { border-radius: 8px 0 0 8px; }
+.stepper-ctl button:last-child { border-radius: 0 8px 8px 0; }
+.rows { display: grid; gap: 6px; }
+.rows .row { display: flex; gap: 6px; align-items: center; }
+.rows .row > * { flex: 1; }
+.rows .row .del { flex: 0 0 auto; }
+.boxes { display: flex; flex-wrap: wrap; gap: 4px; }
+.boxes label { display: inline-flex; }
+.boxes input { width: 22px; height: 22px; accent-color: var(--accent); margin: 0; }
+.hp-bar { height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.hp-bar > div { height: 100%; background: var(--accent); transition: width .2s; }
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: step; display: grid; gap: 10px; }
+.steps > li { counter-increment: step; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 12px 48px; position: relative; background: var(--panel); font-family: var(--sans); }
+.steps > li::before { content: counter(step); position: absolute; left: 12px; top: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font: 700 0.85rem/26px var(--sans); text-align: center; }
+.steps .step-title { font-weight: 700; margin-bottom: 4px; }
+.steps .step-body { font-size: 0.92rem; line-height: 1.5; }
+.steps .step-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.result-box { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); font-size: 0.9rem; }
+.result-box:empty { display: none; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 0.9rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+
+/* popover */
+.popover label.check { display: flex; align-items: center; gap: 8px; }
+.popover { position: fixed; top: 60px; right: 12px; z-index: 40; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; font: 0.9rem var(--sans); box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+.popover[hidden] { display: none; }
+.popover label { display: grid; gap: 4px; }
+
+/* editable register tables */
+.edit-table input { font: 0.88rem var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; min-width: 0; width: 100%; }
+.edit-table td { vertical-align: middle; }
+.edit-table td:first-child { white-space: nowrap; }
+
+/* ---------- restyled play tools (Task 13: Dungeon turn, Combat; root gets .play-page) ---------- */
+/* page header: eyebrow + display title with its icon, actions on the right */
+.play-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-4);
+}
+/* Text that would sit straight on the backdrop gets a frosted band (light backdrops show at full
+   strength, so bare text there is hard to read): the tool page heads, Dungeon turn's room head,
+   Realm's month-end head and Combat's round bar. */
+:is(.play-head, .room-head, .realm-step-head, .round-bar) {
+  background: var(--surface); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
+  border: var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.play-head { padding: var(--space-3) var(--space-4); }
+:is(.room-head, .realm-step-head) { padding: var(--space-2) var(--space-4) var(--space-3); }
+.round-bar { padding: var(--space-2) var(--space-3); }
+.play-head > .muted { flex-basis: 100%; margin: 0; font: 0.85rem/1.45 var(--font-ui); }
+.play-title h1 { display: flex; align-items: center; gap: var(--space-2); font: 600 2.2rem/1.05 var(--font-display); margin: 2px 0 0; font-variant-numeric: lining-nums; }
+.play-title h1 .icon { color: var(--accent); filter: drop-shadow(0 0 6px var(--glow)); }
+
+.play-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.play-actions a.btn { text-decoration: none; }
+.play-actions .btn-ghost { background: color-mix(in srgb, var(--surface-solid) 70%, var(--bg)); }
+/* the shared step-list action row and small notes, in UI type */
+.play-page :is(.card, .result-card) { font-family: var(--font-ui); font-size: 0.92rem; line-height: 1.5; }
+.play-page .card p { margin: 0 0 var(--space-2); }
+.play-page .step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+.play-page .step-actions a.btn { text-decoration: none; }
+/* long table names on the big step buttons wrap instead of overflowing on a phone */
+.play-page .step-actions .btn-lg { white-space: normal; text-align: left; max-width: 100%; }
+.play-page .step-note { font: 0.82rem/1.5 var(--font-ui); margin: var(--space-2) 0 0; }
+.play-page .result-card .kv { margin: var(--space-1) 0 0; font-size: 0.88rem; }
+.play-page .warn { font-size: 0.85rem; font-weight: 600; }
+.play-page .badge { display: inline-flex; align-items: center; gap: 4px; }
+.play-page .badge.is-accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--glow); }
+
+/* ---------- forms in the restyled Sheet, Realm and Settings (Task 14) ---------- */
+:is(.sheet-page, .realm-page, .settings-page) .grid { gap: var(--space-3); }
+:is(.sheet-page, .realm-page, .settings-page) :is(.field, .stepper) { font: 500 0.78rem/1.3 var(--font-ui); color: var(--muted); gap: 4px; }
+:is(.sheet-page, .realm-page, .settings-page) :is(.field input, .field select, .field textarea, .stepper input, .rows input, .rows select, .edit-table input:not([type=checkbox])) {
+  font: 0.92rem/1.35 var(--font-ui); color: var(--ink);
+  background: color-mix(in srgb, var(--surface-solid) 70%, var(--bg));
+  border: var(--hairline); border-radius: var(--radius); padding: 6px 8px;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+:is(.sheet-page, .realm-page, .settings-page) :is(.field input, .field select, .field textarea, .stepper input, .rows input, .rows select, .edit-table input:not([type=checkbox])):focus {
+  outline: none; border-color: var(--accent); box-shadow: var(--focus-ring);
+}
+:is(.sheet-page, .realm-page) .field textarea { font: 1rem/1.45 var(--font-read); min-height: 76px; }
+:is(.sheet-page, .realm-page) .stepper-ctl input { border-radius: 0; border-left-width: 0; border-right-width: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+:is(.sheet-page, .realm-page) .stepper-ctl button {
+  display: grid; place-items: center; width: 34px; padding: 0;
+  color: var(--ink); background: var(--surface-solid); border: var(--hairline);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+:is(.sheet-page, .realm-page) .stepper-ctl button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+:is(.sheet-page, .realm-page) .stepper-ctl button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+:is(.sheet-page, .realm-page) .stepper-ctl button:hover { color: var(--accent); border-color: var(--accent); }
+:is(.sheet-page, .realm-page) .stepper-ctl button:focus-visible { box-shadow: var(--focus-ring); position: relative; }
+:is(.sheet-page, .realm-page) .boxes { gap: 5px; align-items: center; }
+:is(.sheet-page, .realm-page) .boxes input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+:is(.sheet-page, .realm-page) details > summary { cursor: pointer; font: 500 0.82rem/1.6 var(--font-ui); color: var(--muted); }
+:is(.sheet-page, .realm-page) details > summary:hover { color: var(--ink); }
+:is(.sheet-page, .realm-page) .hp-bar { height: 8px; background: color-mix(in srgb, var(--surface-solid) 60%, var(--bg)); border: var(--hairline); }
+:is(.sheet-page, .realm-page, .settings-page) .result-box { background: color-mix(in srgb, var(--surface-solid) 80%, transparent); border-radius: var(--radius); font: 0.9rem/1.5 var(--font-ui); }
+
+/* ---------- Achievements page ---------- */
+.ach-note { margin: 0 0 var(--space-3); }
+/* one heading per game on the Achievements page (Dungeon, Both games, Void) */
+.ach-game { font: 600 1.35rem/1.2 var(--font-display); margin: var(--space-5, 24px) 0 var(--space-2, 8px); display: flex; align-items: baseline; gap: var(--space-2, 8px); }
+.ach-game:first-of-type { margin-top: var(--space-2, 8px); }
+.ach-game .muted { font: 500 0.85rem var(--font-ui, inherit); }
+.ach-total { font: 500 1rem var(--font-ui); color: var(--muted); }
+.ach-total strong { color: var(--accent); font-size: 1.25rem; }
+.ach-group { margin-bottom: var(--space-3); }
+.ach-group .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.ach-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.ach-card {
+  display: flex; gap: var(--space-2); align-items: flex-start; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius, 10px); background: color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.ach-card.is-done { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.ach-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 50%; color: var(--muted); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.ach-card.is-done .ach-icon { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.ach-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ach-title { font: 600 0.98rem/1.25 var(--font-ui); }
+.ach-blurb { font-size: 0.86rem; line-height: 1.3; }
+.ach-card.is-secret .ach-title { letter-spacing: 0.15em; }
+.ach-bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 12%, transparent); overflow: hidden; margin-top: 4px; }
+.ach-bar span { display: block; height: 100%; background: var(--accent); }
+.ach-count, .ach-date { font-size: 0.78rem; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.ach-date { color: var(--accent); }
+
+/* ---------- arrange mode on play pages (shell/arrangecards.ts) ---------- */
+.arr-controls { display: contents; }
+.arr-flow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+.arr-flow > * { grid-column: 1 / -1; min-width: 0; }
+.arr-flow > .card[data-arr-span="half"] { grid-column: auto; }
+.arr-flow > .card { margin: 0; }
+.play-page .card[data-arr-span="half"] { grid-column: auto !important; }
+.play-page .card[data-arr-span="full"] { grid-column: 1 / -1 !important; }
+@media (max-width: 860px) { .arr-flow { grid-template-columns: minmax(0, 1fr); } }
+.is-arranging .card { outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; position: relative; }
+.is-arranging .card.is-dragging { opacity: 0.55; outline-style: solid; }
+.arr-bar {
+  display: flex; align-items: center; gap: 4px; margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1) var(--space-2);
+  padding: 4px; border-radius: var(--radius-md, 8px); background: var(--glow, rgba(127,127,127,.15));
+}
+.arr-bar button {
+  display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line, currentColor); background: var(--surface-solid, Canvas); color: var(--ink); font: 600 0.78rem var(--font-ui);
+}
+.arr-bar button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.arr-bar button:disabled { opacity: 0.4; cursor: default; }
+.arr-bar .arr-grip { cursor: grab; touch-action: none; }
+.arr-bar .arr-span { margin-left: auto; }

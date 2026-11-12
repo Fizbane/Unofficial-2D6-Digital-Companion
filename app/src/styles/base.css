@@ -1,0 +1,80 @@
+/* Base element styles for the overhauled UI (replaces style.css in Task 6). Needs tokens.css. */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: var(--fs, 17px); -webkit-text-size-adjust: 100%; }
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  color: var(--ink);
+  background-color: var(--bg);
+  /* theme scrim over the painted backdrop, then the gradient fallback underneath */
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg) 30%, transparent), color-mix(in srgb, var(--bg) 45%, transparent)),
+    var(--backdrop),
+    var(--backdrop-fallback);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  font: 1rem/1.6 var(--font-read);
+  font-feature-settings: "kern", "liga";
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+  margin: 0 0 var(--space-3);
+}
+h1 { font-size: 2.1rem; }
+h2 { font-size: 1.6rem; }
+h3 { font-size: 1.3rem; }
+h4 { font-size: 1.1rem; }
+p { margin: 0 0 var(--space-3); }
+
+a { color: var(--accent); text-underline-offset: 0.15em; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, input, select, textarea, label, nav, th { font-family: var(--font-ui); }
+.num, td.num, input[type="number"] { font-variant-numeric: tabular-nums; }
+kbd {
+  font: 0.75em var(--font-ui);
+  border: var(--hairline); border-bottom-width: 2px; border-radius: var(--radius-sm);
+  padding: 0 0.35em;
+}
+code { font-size: 0.9em; }
+hr { border: 0; border-top: var(--hairline); margin: var(--space-4) 0; }
+::selection { background: var(--mark); color: var(--ink); }
+
+.muted { color: var(--muted); }
+
+/* focus: solid accent ring (--focus-ring) on every interactive element */
+:focus { outline: none; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--accent); }
+
+/* scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+/* no blur support: near-opaque panels so text stays readable over the image */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --surface: rgb(var(--panel-rgb) / max(var(--panel-alpha), 0.96)); }
+}
+/* OS-level reduce transparency: solid panels regardless of the theme alpha */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --surface: var(--surface-solid); --blur: 0px; }
+}
+/* reduced motion: no slides or fades */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* light themes: no wash over the backdrop, the scene shows at full strength (text sits on panels) */
+:root[data-scheme="light"] body {
+  background-image: var(--backdrop), var(--backdrop-fallback);
+}

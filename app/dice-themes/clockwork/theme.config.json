@@ -1,0 +1,20 @@
+{
+  "name": "Clockwork Brass",
+  "systemName": "clockwork",
+  "extends": "smooth",
+  "author": "2D6 Companion (generated)",
+  "version": 0.2,
+  "meshFile": "smooth-pip.json",
+  "material": {
+    "type": "standard",
+    "diffuseTexture": "diffuse.jpg",
+    "bumpTexture": "normal.png",
+    "specularTexture": "specular.jpg",
+    "diffuseLevel": 1,
+    "bumpLevel": 0.6,
+    "specularPower": 1
+  },
+  "diceAvailable": [
+    "pip"
+  ]
+}

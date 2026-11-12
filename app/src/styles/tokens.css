@@ -1,0 +1,76 @@
+/* Palette: the default Parchment / Dungeon themes (themes.ts sets the others inline). */
+:root {
+  --fs: 17px;
+  --bg: #f7f3ea;
+  --panel: #efe8d9;
+  --ink: #241f18;
+  --muted: #6f6556;
+  --line: #d9cfbb;
+  --accent: #9a3b1f;
+  --accent-ink: #fff;
+  --hit: #ffe28a;
+  --row-alt: #f1ead9;
+  --mark: #ffe9a8;
+  --danger: #b02a1e;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17140f; --panel: #201c16; --ink: #ebe3d3; --muted: #a59a87; --line: #3a3328;
+    --accent: #e0835f; --accent-ink: #17140f; --hit: #5b4a12; --row-alt: #1d1913; --mark: #6b5513; --danger: #f2766a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17140f; --panel: #201c16; --ink: #ebe3d3; --muted: #a59a87; --line: #3a3328;
+  --accent: #e0835f; --accent-ink: #17140f; --hit: #5b4a12; --row-alt: #1d1913; --mark: #6b5513; --danger: #f2766a;
+  color-scheme: dark;
+}
+
+/* Design tokens for the UI overhaul. Only adds new custom properties: the palette vars
+   (--bg, --panel, --ink, --muted, --line, --accent, --accent-ink, --hit, --row-alt, --mark, --danger, --fs)
+   come from the palette block above / themes.ts. applyTheme() sets --panel-rgb, --panel-alpha,
+   --backdrop, --backdrop-fallback and --glow inline; the values below are pre-JS fallbacks. */
+:root {
+  /* type */
+  --font-display: "Cormorant Garamond", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-read: "Crimson Pro", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --eyebrow-size: 0.7rem;
+  --eyebrow-tracking: 0.14em;
+
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* shape */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-pill: 999px;
+  --hairline: 1px solid var(--line);
+  --blur: 6px;
+
+  /* frosted panels (--panel stays the opaque palette colour) */
+  --panel-rgb: 239 232 217;
+  --panel-alpha: 0.88;
+  --surface: rgb(var(--panel-rgb) / var(--panel-alpha));
+  --surface-solid: rgb(var(--panel-rgb));
+
+  /* backdrop + glow */
+  --backdrop: none;
+  --backdrop-fallback: linear-gradient(180deg, var(--bg), var(--panel));
+  --glow: rgb(154 59 31 / 0.25);
+  /* keyboard focus: solid accent (>= 3:1 on panel and bg in every theme, see themes.test.ts) + soft halo */
+  --focus-ring: 0 0 0 2px var(--accent), 0 0 0 4px var(--glow);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 20px rgb(0 0 0 / 0.14);
+
+  /* motion */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
+}

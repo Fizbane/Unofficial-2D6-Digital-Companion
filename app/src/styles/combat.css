@@ -1,0 +1,113 @@
+/* Combat (restyled in Task 13). */
+
+/* setup: creature search and picker */
+.cb-search-wrap {
+  display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3);
+  padding: 0 var(--space-3); border: var(--hairline); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-solid) 80%, transparent); color: var(--muted);
+}
+.cb-search-wrap:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.cb-search { flex: 1; min-width: 0; font: 1rem var(--font-ui); padding: 10px 0; border: 0; background: transparent; color: var(--ink); }
+.cb-search:focus-visible { box-shadow: none; }
+.cb-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-2); max-height: 340px; overflow-y: auto; }
+.cb-pick {
+  display: grid; text-align: left; gap: 2px; padding: var(--space-2) var(--space-3);
+  border: var(--hairline); border-radius: var(--radius); background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
+  color: var(--ink); font: 0.85rem var(--font-ui); cursor: pointer;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.cb-pick:hover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.cb-pick .muted { font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+
+/* round counter + badges */
+.round-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
+.round-bar .eyebrow { font-size: calc(var(--eyebrow-size) * 1.6); color: var(--ink); margin-left: 0; }
+.round-bar .badge, .round-bar .warn { background: var(--surface); padding: 2px 8px; border-radius: var(--radius-pill); }
+
+/* creature vs you */
+.combat-face { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: var(--space-3); margin-bottom: var(--space-4); }
+.combat-face > .card { margin: 0; }
+.combat-face .vs { align-self: center; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--accent); background: var(--surface); border: var(--hairline); box-shadow: 0 0 14px var(--glow); }
+.combat-face .card-title { font-variant-numeric: lining-nums; }
+.combat-face [data-side="foe"] { border-top: 3px solid color-mix(in srgb, var(--danger) 70%, var(--line)); }
+.combat-face [data-side="you"] { border-top: 3px solid var(--accent); }
+.combat-face .stat-block { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); }
+.combat-face .stat-block dd { font-size: 1rem; overflow-wrap: anywhere; }
+.combat-face [data-side="you"] .stat-block > div:first-child { grid-column: 1 / -1; }
+.combat-face [data-side="you"] .stat-block dd { display: flex; align-items: center; gap: var(--space-2); }
+.combat-face .stepper-ctl { display: inline-flex; vertical-align: middle; }
+.combat-face .hp-bar { margin-top: var(--space-3); }
+@media (max-width: 700px) {
+  .combat-face { grid-template-columns: minmax(0, 1fr); }
+  .combat-face .vs { justify-self: center; width: 32px; height: 32px; }
+}
+
+/* HP steppers: compact, icon buttons */
+.foe .stepper-ctl, .combat-face .stepper-ctl { width: auto; }
+.foe .stepper-ctl input, .combat-face .stepper-ctl input { width: 3em; font: 600 0.95rem var(--font-ui); font-variant-numeric: tabular-nums; padding: 2px 4px; border: var(--hairline); border-width: 1px 0; background: var(--surface-solid); color: var(--ink); }
+.foe .stepper-ctl button, .combat-face .stepper-ctl button { width: 30px; display: grid; place-items: center; background: var(--surface-solid); }
+.foe .stepper-ctl button:hover, .combat-face .stepper-ctl button:hover { color: var(--accent); }
+
+.fatigue {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: var(--ink); color: var(--bg); font: 700 1rem/1 var(--font-ui);
+}
+
+/* the current attack: a large result card */
+.attack-card { padding: var(--space-4) var(--space-5); margin-bottom: var(--space-4); border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.attack-card .rc-dice { font: 600 0.75rem var(--font-ui); color: var(--muted); }
+.attack-card .rc-title { display: flex; align-items: center; gap: var(--space-2); font-size: 1.5rem; font-variant-numeric: lining-nums; }
+.attack-card .rc-text { font: 0.95rem/1.5 var(--font-ui); }
+.dice-pair { display: flex; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); }
+.die-face {
+  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 10px;
+  font: 700 1.9rem/1 var(--font-ui); font-variant-numeric: tabular-nums;
+  color: var(--ink); background: var(--surface-solid); border: 1px solid var(--line);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--line) 80%, transparent);
+}
+.attack-card.is-prime { border-color: var(--accent); border-left-width: 3px; box-shadow: 0 0 0 1px var(--glow), 0 0 24px var(--glow); }
+.attack-card.is-prime .rc-title { color: var(--accent); }
+.attack-card.is-prime .die-face { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); box-shadow: 0 0 14px var(--glow); }
+.attack-card.is-miss { border-left-color: var(--danger); }
+.attack-card.is-miss .rc-title { color: color-mix(in srgb, var(--danger) 75%, var(--ink)); }
+.attack-card.is-miss .die-face { border-color: color-mix(in srgb, var(--danger) 60%, var(--line)); }
+
+/* manoeuvre chips with their Shift cost */
+.man-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
+.man-grid .chip { min-height: 2.4rem; padding: 4px var(--space-3); font-size: 0.88rem; }
+.man-grid .chip:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.man-grid .chip:not(:disabled):hover { background: var(--glow); box-shadow: 0 0 0 3px var(--glow); }
+.attack-card.is-prime .man-grid .chip { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.attack-card.is-prime .man-grid .chip .chip-value { color: inherit; opacity: 0.85; }
+
+.last-event { font-size: 0.88rem; padding: var(--space-2) var(--space-3); margin-bottom: var(--space-2); border-radius: var(--radius); background: color-mix(in srgb, var(--surface-solid) 70%, transparent); border: var(--hairline); }
+.last-event .eyebrow { display: inline; margin-right: var(--space-1); }
+
+/* foes */
+.foes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
+.foe {
+  border: var(--hairline); border-radius: var(--radius); padding: var(--space-3);
+  background: color-mix(in srgb, var(--surface-solid) 70%, transparent); font: 0.9rem var(--font-ui);
+}
+.foe.targeted { border-color: var(--accent); box-shadow: 0 0 0 1px var(--glow), 0 0 14px var(--glow); }
+.foe.dead { opacity: 0.55; }
+.foe-head { display: flex; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-2); }
+.foe-name { display: grid; gap: 0; min-width: 0; flex: 1; }
+.foe-name strong { font: 600 1.15rem/1.2 var(--font-display); font-variant-numeric: lining-nums; }
+.foe-name .muted { font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.foe-head .badge { margin-left: auto; }
+.foe details { margin-top: var(--space-2); }
+.foe summary { cursor: pointer; font-size: 0.8rem; }
+.foe .kv { margin: var(--space-2) 0; font-size: 0.85rem; }
+.hp-line { display: flex; align-items: center; gap: var(--space-2); }
+.foe-bar > div { background: var(--danger); }
+
+/* combat log: tones for Prime / miss / armour deflect */
+.combat-log { margin: 0; padding-left: 1.2em; font: 0.88rem/1.5 var(--font-ui); display: grid; gap: 4px; }
+.combat-log li::marker { color: var(--muted); }
+.tone-prime { color: var(--accent); }
+.tone-exact { color: var(--accent); }
+.tone-miss { color: color-mix(in srgb, var(--danger) 75%, var(--ink)); }
+:is(.tone-prime, .tone-miss) .icon { vertical-align: -0.12em; }
+.deflect { color: var(--muted); }
+.deflect .icon { vertical-align: -0.12em; margin-right: 2px; }

@@ -1,0 +1,80 @@
+/* Character sheet (restyled in Task 14; the root gets .play-page.sheet-page). */
+.sheet-page { container-type: inline-size; }
+.sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+/* two columns only when the tab page itself is wide enough (side panels open shrink it) */
+@container (max-width: 900px) { .sheet-grid { grid-template-columns: minmax(0, 1fr); } }
+.sheet-grid > .card { margin: 0; }
+.sheet-grid > .card[data-span="2"] { grid-column: 1 / -1; }
+
+.sheet-page .card-body > * + * { margin-top: var(--space-3); }
+.sheet-page .sheet-hint { font-size: 0.8rem; margin: 0; }
+.sheet-page .card-body > .sheet-hint:first-child { margin-top: calc(-1 * var(--space-2)); }
+.sheet-page .step-actions { margin: var(--space-3) 0 0; }
+.sheet-sub {
+  display: flex; align-items: baseline; gap: var(--space-2); margin: 0 0 var(--space-2);
+  font: 600 calc(var(--eyebrow-size) * 1.25)/1.3 var(--font-ui); font-variant-caps: all-small-caps;
+  letter-spacing: var(--eyebrow-tracking); color: var(--muted);
+}
+.sheet-count { font: 500 0.75rem var(--font-ui); font-variant-caps: normal; letter-spacing: 0; color: var(--muted); opacity: 0.85; }
+
+/* identity: level readout */
+.level-field strong { font: 600 1.25rem/1.2 var(--font-display); color: var(--ink); font-variant-numeric: lining-nums; }
+.level-field span { font-size: 0.78rem; }
+
+/* stats */
+.sheet-page .stat-block { grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); }
+.sheet-page .stat-block > div:first-child dd { font: 600 1.2rem/1.3 var(--font-display); font-variant-numeric: lining-nums; }
+.sheet-more > .grid { margin-top: var(--space-2); }
+
+/* HP bar with its number */
+.hp-line-big { display: flex; align-items: center; gap: var(--space-3); }
+.hp-line-big .hp-bar { flex: 1; margin: 0; }
+.hp-line-big .hp-bar > div { background: var(--danger); }
+.hp-num { font: 600 0.9rem var(--font-ui); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Bloodied / Soaked */
+.condition { padding-top: var(--space-3); border-top: var(--hairline); }
+.condition-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); margin-bottom: var(--space-2); font-family: var(--font-ui); }
+.condition-head strong { font-size: 0.92rem; }
+.condition-head .muted { font-size: 0.78rem; }
+.sheet-page .cond-boxes input { accent-color: var(--danger); }
+.cond-boxes .btn { margin-left: var(--space-2); }
+
+/* rows of inputs: manoeuvres, armour, scrolls, potions, large items */
+/* manoeuvre / armour rows: name, dice set, damage or modifier */
+.sheet-page .rows .row:has(> [data-arr="manoeuvres"]), .sheet-page .rows .row:has(> [data-arr="armour"]) {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(4.5rem, 0.8fr) minmax(0, 1.4fr);
+}
+.sheet-page .rows .row:has(> [data-arr="potions"]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+/* scroll rows: name, orbit, dispel, Cast on one line; the effect on its own line under them */
+.sheet-page .scroll-rows .row {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  padding-bottom: var(--space-2); border-bottom: var(--hairline);
+}
+.sheet-page .scroll-rows .row > input[data-j="3"] { grid-column: 1 / -1; order: 5; }
+.sheet-page .rows .row > .btn { flex: 0 0 auto; }
+.sheet-page .scroll-rows .row:last-child { border-bottom: 0; padding-bottom: 0; }
+.large-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* manoeuvres you can learn */
+.learn-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-1); font: 0.88rem/1.45 var(--font-ui); }
+.learn-list li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius); background: color-mix(in srgb, var(--surface-solid) 60%, transparent); }
+.learn-lvl { flex: none; font: 600 0.72rem var(--font-ui); color: var(--accent); min-width: 1.8em; }
+.learn-text { flex: 1; min-width: 0; }
+
+/* favour of the gods */
+.favour-list { display: grid; gap: var(--space-1); }
+.favour-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-1) 0; border-bottom: var(--hairline); font: 0.9rem var(--font-ui); }
+.favour-row:last-child { border-bottom: 0; }
+.favour-god { flex: 1 1 150px; font: 600 1.02rem/1.3 var(--font-display); }
+
+/* legend status: numbered level boxes */
+.legend-boxes label { display: inline-grid; justify-items: center; gap: 1px; font: 600 0.68rem var(--font-ui); color: var(--muted); }
+.notes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
+
+/* the built-in portrait gallery (Identity card) */
+.portrait-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px; max-height: 260px; overflow-y: auto; padding: 6px; margin-top: var(--space-1); border: 1px solid var(--line, rgb(127 127 127 / .3)); border-radius: 8px; background: rgb(0 0 0 / .12); }
+.portrait-pick { padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; cursor: pointer; aspect-ratio: 1; overflow: hidden; }
+.portrait-pick img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.portrait-pick:hover { border-color: var(--accent); }
+.portrait-pick:focus-visible { outline: none; box-shadow: var(--focus-ring); }

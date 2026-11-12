@@ -1,0 +1,95 @@
+/* 2D6 Void character sheet (tools/void/sheet.ts). The root also has .play-page.sheet-page, so the
+   shared sheet layout (grid, hints, conditions, large items) from sheet.css applies. */
+.vsheet-page { --vs-yellow: #e2b42a; --vs-yellow-ink: #1d1600; }
+
+/* rule notes */
+.vs-rule { display: flex; gap: var(--space-1); align-items: flex-start; margin: 0; font: 0.76rem/1.45 var(--font-ui); color: var(--muted); }
+.vs-rule .icon { flex: none; margin-top: 2px; color: var(--accent); }
+
+/* creation */
+.vs-choices { display: grid; gap: var(--space-2); }
+.vs-choices-row { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+.vs-choice { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2); border: var(--hairline); border-radius: var(--radius); cursor: pointer; font: 0.88rem/1.4 var(--font-ui); }
+.vs-choice > span { display: grid; gap: 2px; min-width: 0; }
+.vs-choice:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.vs-choice:has(input:disabled) { opacity: 0.55; cursor: default; }
+.vs-choice input { margin-top: 3px; accent-color: var(--accent); }
+.vs-choice-sm { padding: var(--space-1) var(--space-2); }
+.vs-choice-sm > span { display: block; }
+.vs-man-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-1); }
+
+/* dice sets */
+.vs-dice { font: 600 0.8rem var(--font-ui); font-variant-numeric: tabular-nums; color: var(--accent); white-space: nowrap; }
+.vs-dieset { display: inline-flex; align-items: center; gap: 3px; }
+.vs-die {
+  display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; padding: 0; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--bg); color: var(--ink); font: 600 0.82rem var(--font-ui); cursor: pointer;
+}
+span.vs-die { cursor: default; }
+.vs-die.is-yellow { background: var(--vs-yellow); border-color: var(--vs-yellow); color: var(--vs-yellow-ink); box-shadow: 0 0 0 2px color-mix(in srgb, var(--vs-yellow) 35%, transparent); }
+.vs-die:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.vs-plus { color: var(--muted); font: 600 0.8rem var(--font-ui); }
+
+/* rows: manoeuvres, armour, stims */
+.vs-table { display: grid; gap: var(--space-1); }
+.vs-trow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-1) 0; border-bottom: var(--hairline); font: 0.9rem/1.35 var(--font-ui); }
+.vs-trow:last-child { border-bottom: 0; }
+.vs-trow > strong { flex: 1 1 8rem; min-width: 0; }
+.vs-stim > .muted { flex: 2 1 12rem; font-size: 0.8rem; }
+.vs-stim select { max-width: 11rem; }
+.vs-mod { display: inline-flex; align-items: center; gap: 4px; font: 0.8rem var(--font-ui); color: var(--muted); }
+.vs-mod input { width: 4em; }
+.vs-tag { padding: 0 6px; border: var(--hairline); border-radius: 999px; font: 600 0.68rem/1.6 var(--font-ui); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.vs-add { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
+.vs-add select { flex: 1 1 12rem; min-width: 0; }
+
+/* ranged weapons */
+.vs-weapon { padding: var(--space-2) 0; border-bottom: var(--hairline); display: grid; gap: var(--space-1); }
+.vs-weapon:last-child { border-bottom: 0; }
+.vs-weapon-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); font-family: var(--font-ui); }
+.vs-weapon-head .muted { font-size: 0.82rem; }
+.vs-weapon-ammo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.vs-pre { white-space: pre-line; margin: var(--space-1) 0 0; font: 0.82rem/1.45 var(--font-ui); }
+.vs-marks { padding-top: var(--space-3); border-top: var(--hairline); }
+.vsheet-page .vs-hits input { accent-color: var(--accent); }
+.vs-hits .btn { margin-left: var(--space-2); }
+
+/* skills */
+.vs-special { display: grid; gap: 2px; padding: var(--space-2); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 8%, transparent); font: 0.86rem/1.4 var(--font-ui); }
+.vs-check-row { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
+.vs-check-row input { width: 5.5em; }
+.vs-ste { display: grid; gap: 2px; }
+.vs-ste-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: 3px 0; border-bottom: var(--hairline); font: 0.88rem var(--font-ui); }
+.vs-ste-row:last-child { border-bottom: 0; }
+.vs-ste-row .muted { font-size: 0.76rem; }
+
+/* gases */
+.vs-gas { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--space-2); }
+
+/* lists: effects, quests, bio enhancements, crafting */
+.vs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); font: 0.88rem/1.4 var(--font-ui); }
+.vs-list li { display: flex; align-items: center; gap: var(--space-2); }
+.vs-list li > input { flex: 1; min-width: 0; }
+.vs-quests li.is-done input { text-decoration: line-through; color: var(--muted); }
+.vs-bio-n { flex: none; width: 1.4em; text-align: center; font: 600 0.75rem var(--font-ui); color: var(--muted); }
+.vs-skull { color: var(--muted); font-size: 0.8rem; }
+.vs-skull.is-on { color: var(--danger); font-weight: 600; }
+.vs-craft li { align-items: flex-start; justify-content: space-between; padding-bottom: var(--space-1); border-bottom: var(--hairline); }
+.vs-craft li:last-child { border-bottom: 0; }
+.vs-craft .sheet-hint { margin: 2px 0 0; }
+.vs-effects li { flex-wrap: wrap; }
+.vs-hero label.is-final span { color: var(--accent); }
+.vs-hero label.is-final input { accent-color: #3b7bd6; }
+
+.vs-alert { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2); border: 1px solid var(--danger); border-radius: var(--radius); color: var(--danger); font: 0.86rem/1.45 var(--font-ui); }
+.vs-alert .btn { margin-top: var(--space-1); }
+
+/* portrait gallery: style tabs over the grid */
+.vs-gallery { display: grid; gap: var(--space-1); }
+.vs-style-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.vs-style-tab { padding: 3px 10px; border: var(--hairline); border-radius: 999px; background: none; color: var(--muted); font: 600 0.78rem var(--font-ui); cursor: pointer; }
+.vs-style-tab[aria-selected="true"] { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.vs-style-tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.vs-gallery .portrait-pick[hidden] { display: none; }
+.vs-gallery .portrait-pick img { image-rendering: auto; object-fit: cover; }
+.vs-gallery-empty { margin: 0; font-size: 0.82rem; }

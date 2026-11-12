@@ -1,0 +1,46 @@
+/* 2D6 Void: Hulk turn and Hulk map. Layout and steps reuse dungeon.css (.dturn, .steps, .step-result,
+   .dmapview…); this file only adds what Void has and Dungeon doesn't. */
+
+/* "ⓘ rule note": the reading picked where the book is unclear (docs/spec-void.md §5) */
+.rule-note {
+  display: flex; gap: 6px; align-items: baseline; margin: var(--space-2) 0 0;
+  font: 0.78rem/1.45 var(--font-ui); color: var(--muted);
+}
+.rule-note-i { color: var(--accent); font-weight: 600; }
+.rule-note strong { font-weight: 600; color: color-mix(in srgb, var(--ink) 75%, var(--muted)); }
+
+.vhulk .ok { color: color-mix(in srgb, #2f8a4a 80%, var(--ink)); font: 600 0.9rem var(--font-ui); margin: var(--space-2) 0; }
+.vhulk-enc {
+  margin: var(--space-2) 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, transparent); border-left: 3px solid var(--accent);
+  font: 0.92rem/1.5 var(--font-ui);
+}
+.vhulk-rules { margin: var(--space-2) 0; padding-left: 1.2em; font: 0.88rem/1.5 var(--font-ui); }
+.vhulk-boss { align-items: center; }
+
+/* the way on: the chosen exit's door, lock and barrier */
+.vhulk-door {
+  margin: var(--space-3) 0; padding: var(--space-3); border: var(--hairline); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-solid) 70%, transparent); font: 0.9rem/1.5 var(--font-ui);
+}
+.vhulk-door p { margin: var(--space-1) 0; }
+.vhulk-door[data-exit-type="barrier"] { border-color: color-mix(in srgb, #38c6ff 55%, var(--line)); }
+.vhulk-door[data-exit-type="security"] { border-color: color-mix(in srgb, #d9a521 55%, var(--line)); }
+.vhulk-door[data-exit-type="biocoded"] { border-color: color-mix(in srgb, #3f9a5a 55%, var(--line)); }
+.vhulk-statrow { align-items: center; }
+.vhulk-stat { display: inline-flex; align-items: center; gap: var(--space-2); font: 600 0.8rem var(--font-ui); }
+.vhulk-stat input {
+  width: 4.2em; padding: 4px 6px; font: 600 0.9rem var(--font-ui); color: var(--ink);
+  background: var(--surface); border: var(--hairline); border-radius: var(--radius);
+}
+.vhulk-check { display: inline-flex; align-items: center; gap: 6px; font: 0.85rem var(--font-ui); cursor: pointer; }
+
+/* the hull is portrait (17 × 28): keep it whole on screen */
+.vmapview .dmap { max-height: calc(100dvh - 220px); width: auto; max-width: 100%; }
+.dturn-map .vmapview .dmap { max-height: 70dvh; }
+.vmap-page .vmapview .dmap { max-height: max(420px, calc(100dvh - 200px)); }
+@media (min-width: 900px) {
+  @container dturn (min-width: 700px) {
+    .dturn-map .vmapview .dmap { max-height: calc(100dvh - 300px); min-height: 320px; }
+  }
+}

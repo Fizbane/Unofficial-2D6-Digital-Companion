@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+books/
+pipeline/work/
+app/node_modules/
+app/dist/
+# Build outputs. The ones the app ships (manifests, free content, free Core scans) are kept, so a
+# fresh clone runs; the rest (e.g. library-void.json) must never be committed.
+app/public/data/*
+!app/public/data/manifest.json
+!app/public/data/manifest-void.json
+!app/public/data/free.json
+app/public/pages/*
+!app/public/pages/core/
+pipeline/helpers_*/
+pipeline/agent_*/
+.claude/settings.local.json
+app/public/assets/
+app/public/ocr/
+app/public/pdfjs/
+app/release/
+app/release-*/

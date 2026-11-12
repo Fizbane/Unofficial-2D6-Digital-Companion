@@ -1,0 +1,9 @@
+{
+  "name": "2D6 Companion",
+  "short_name": "2D6",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#17140f",
+  "theme_color": "#1d1a16",
+  "icons": []
+}

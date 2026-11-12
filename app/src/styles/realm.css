@@ -1,0 +1,110 @@
+/* Realm map (moved from style.css). */
+.rmap { display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; touch-action: manipulation; }
+.rmap .rm-empty { cursor: pointer; }
+.rmap .rm-empty:hover { fill: #d0582c22; }
+.rmap [data-plot] { cursor: pointer; }
+
+/* ---------- Realm (restyled in Task 14; the root gets .play-page.realm-page) ---------- */
+.realm-summary { padding: var(--space-3); }
+.realm-summary .stat-block { grid-template-columns: repeat(auto-fill, minmax(7.2rem, 1fr)); }
+.realm-summary .stat-block dd { font-size: 1rem; }
+.realm-page .tabs-bar { margin: 0 0 var(--space-4); background: var(--surface); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); border-radius: var(--radius) var(--radius) 0 0; padding: 0 var(--space-2); }
+.realm-page .tab { padding: var(--space-3) var(--space-3); font-size: 0.86rem; }
+.realm-page .card-body > * + * { margin-top: var(--space-3); }
+.realm-page .card-body > .step-actions { margin-bottom: 0; }
+.realm-hint { font-size: 0.85rem; margin: 0; }
+.realm-foot { font: 0.8rem var(--font-ui); width: fit-content; padding: 2px var(--space-2); border-radius: var(--radius-sm); background: var(--surface); }
+.realm-sub { font: 500 0.82rem var(--font-ui); color: var(--muted); margin-left: var(--space-1); }
+.realm-subhead {
+  margin: var(--space-4) 0 var(--space-2); font: 600 calc(var(--eyebrow-size) * 1.25)/1.3 var(--font-ui);
+  font-variant-caps: all-small-caps; letter-spacing: var(--eyebrow-tracking); color: var(--muted);
+}
+.realm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.realm-grid > .card { margin: 0; }
+@media (max-width: 860px) { .realm-grid { grid-template-columns: minmax(0, 1fr); } }
+/* unrest and other realm warnings use the danger colour */
+.realm-page .warn { color: var(--danger); }
+.realm-page .warn .icon, .realm-note .icon { vertical-align: -0.18em; margin-right: 4px; }
+/* informational reminders (e.g. FIVEPT1 for 5+ squares) are not warnings: accent, not danger */
+.realm-note { margin: var(--space-2) 0 0; font: 600 0.85rem/1.5 var(--font-ui); color: var(--accent); }
+.realm-page .unrest-boxes input { accent-color: var(--danger); }
+
+/* turn: the six actions */
+.realm-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--space-2); }
+.realm-action {
+  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); text-align: left;
+  color: var(--ink); background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
+  border: var(--hairline); border-radius: var(--radius); font: 0.88rem/1.4 var(--font-ui); cursor: pointer;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.realm-action > .icon { color: var(--accent); margin-top: 1px; }
+.realm-action:hover:not(:disabled) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.realm-action:focus-visible { box-shadow: var(--focus-ring); }
+.realm-action:disabled { opacity: 0.5; cursor: not-allowed; }
+.realm-action:disabled > .icon { color: var(--muted); }
+.ra-text { display: grid; gap: 2px; min-width: 0; }
+.ra-text strong { font-weight: 600; font-size: 0.92rem; }
+.ra-text .muted { font-size: 0.8rem; }
+.realm-diary { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; font: 0.88rem/1.5 var(--font-ui); }
+.realm-diary li::marker { color: var(--accent); }
+
+/* end of month / explore: the step list (shared look with Dungeon turn) */
+.realm-step-head { margin: var(--space-2) 0 var(--space-3); }
+.realm-step-head h2 { font: 600 1.8rem/1.1 var(--font-display); margin: 2px 0 0; font-variant-numeric: lining-nums; }
+.realm-page .steps { margin-bottom: var(--space-4); }
+.realm-page .steps > li.step { font-size: 0.92rem; line-height: 1.5; }
+.realm-page .steps .step-body > p { margin: var(--space-2) 0 0; }
+.realm-next { margin-bottom: var(--space-5); }
+
+/* map tab: plot details */
+.realm-page .plot-card { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--surface-solid) 80%, transparent); border-radius: var(--radius); font-family: var(--font-ui); }
+.realm-page .plot-card p { margin: var(--space-1) 0; }
+.realm-page .plot-card .btn-icon { margin-left: auto; }
+.realm-page .map-wrap { background: color-mix(in srgb, var(--surface-solid) 60%, transparent); border-radius: var(--radius); padding: var(--space-2); }
+
+/* lands and buildings: book-look tables with inputs */
+.realm-page .scroll { background: color-mix(in srgb, var(--surface-solid) 55%, transparent); }
+.realm-page .data-table td { vertical-align: middle; }
+.realm-page .data-table input:not([type=checkbox]) { min-width: 4em; padding: 4px 6px; font-size: 0.88rem; }
+.realm-page .data-table a { color: var(--accent); }
+.realm-page .row-acts { white-space: nowrap; text-align: right; }
+.realm-page .bstate { font: 0.75rem var(--font-ui); }
+.stepper-ctl.mini { display: inline-flex; width: auto; vertical-align: middle; }
+.realm-page .stepper-ctl.mini input { width: 2.6em; padding: 2px 4px; text-align: center; }
+.realm-page .stepper-ctl.mini button { width: 26px; }
+
+/* all building cards */
+.bcards > summary { list-style: none; display: grid; gap: 2px; }
+.bcards > summary::-webkit-details-marker { display: none; }
+.bcards > summary .card-title { display: inline-flex; align-items: center; gap: var(--space-2); }
+.bcards > summary .card-title::after { content: ""; width: 7px; height: 7px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg); margin-top: -4px; transition: transform var(--dur) var(--ease); }
+.bcards[open] > summary .card-title::after { transform: rotate(225deg); margin-top: 4px; }
+.bcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+.bcard-card { margin: 0; padding: var(--space-3); background: color-mix(in srgb, var(--surface-solid) 70%, transparent); font-size: 0.85rem; }
+.bcard-card .card-head { margin-bottom: var(--space-2); }
+.bcard-card .card-title { font-size: 1.1rem; }
+.bcard-card .stat-block { grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: var(--space-1); margin-bottom: var(--space-2); }
+.bcard-card .stat-block > div { padding: 3px var(--space-2); }
+.bcard-card .stat-block dd { font-size: 0.9rem; }
+.bcard-card p { margin: var(--space-1) 0 0; }
+
+/* ledger */
+.owner-list { display: grid; gap: 0; }
+.owner-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-3); padding: var(--space-1) 0; border-bottom: var(--hairline); font: 0.88rem var(--font-ui); }
+.owner-row:last-child { border-bottom: 0; }
+.owner-name { font: 600 1rem/1.3 var(--font-display); }
+.owner-ctl { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.owner-ctl .muted { font-size: 0.78rem; }
+.wellness-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.realm-page .rows .row > .btn { flex: 0 0 auto; }
+/* building register: fit at desktop width with the side panels open */
+.realm-page .register th, .realm-page .register td { padding: 6px 8px; }
+.realm-page .register th .muted { font-weight: 500; }
+.realm-page .register .bname a { display: block; }
+.realm-page .register .bname .muted { font: 0.75rem var(--font-ui); }
+.realm-page .register .boxes { width: 6.4rem; gap: 3px; }
+.realm-page .register .boxes input { width: 18px; height: 18px; }
+.realm-page .register .stepper-ctl.mini { white-space: nowrap; }
+.realm-page .register .stepper-ctl.mini button { width: 22px; }
+.realm-page .register .stepper-ctl.mini input { width: 2em; min-width: 0; padding: 2px 0; }
+.realm-page .register td:nth-child(4) { white-space: nowrap; }
