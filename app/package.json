@@ -83,5 +83,6 @@
       "releaseType": "draft"
     }
   },
-  "productName": "2D6 Companion"
+  "productName": "2D6 Companion",
+  "license": "MIT"
 }

@@ -2,13 +2,17 @@
 
 **2D6 Companion** is an unofficial, fan-made play aid for the **2D6 Dungeon**, **2D6 Realm** and **2D6 Void** tabletop games. It gives you a searchable rules reference, clickable roll tables with 3D dice, and play tools that follow the books' flowcharts: dungeon and Dark Hulk turns, combat, character sheets, maps, a journal and more.
 
-> This is a fan project. It is not made, endorsed or supported by the publisher of 2D6 Dungeon and 2D6 Void. Please buy the books from the publisher: the app needs them.
+> **Disclaimer:** Unofficial 2D6 Digital (2D6 Companion) is an independent production by Fizbane and is not affiliated with DR Games or Toby Lancaster. It is published under the [2D6 Dungeon Third Party License](https://drgames.co.uk/2d6-3rd-party-licence/). It is not official, and it is not endorsed or sponsored by DR Games.
+>
+> 2D6 Dungeon is copyright of DR Games and Toby Lancaster.
 
 ## The books are not included
 
 The app ships only free content and the structure needed to find things in a book: no paid book text. To use the paid books (the Tables Codex, Realm and 2D6 Void), open **your own PDF** in Settings → Books. It is read on your device only and never uploaded, and the app keeps just what it needs, so you only do this once per device.
 
-## Get it
+**Don't have the books yet?** Get started today at the [DR Games online shop](https://drgames.co.uk/dr-games-online-shop/).
+
+## Get the App
 
 ### Windows desktop app
 
@@ -59,3 +63,9 @@ npm --prefix app run dist:win  # Windows installer and portable .exe into app/re
 ```
 
 The build ends with `check-dist`, which makes sure no book text is in the output. Its full text scan needs a phrase list that is not part of this repo, so here it prints a warning and runs only its structural checks.
+
+## Licence
+
+The code in this repository is released under the [MIT License](LICENSE).
+
+That licence covers this project's own code only. It gives no rights to DR Games' material: the 2D6 Dungeon, 2D6 Realm and 2D6 Void names, logos, rules, text and art belong to DR Games and Toby Lancaster, and are used under the [2D6 Dungeon Third Party License](https://drgames.co.uk/2d6-3rd-party-licence/).
