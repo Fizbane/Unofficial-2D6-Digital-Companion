@@ -20,3 +20,12 @@ app/public/ocr/
 app/public/pdfjs/
 app/release/
 app/release-*/
+
+# Paid-book text stays on this machine: only the free Core Rules transcriptions are tracked.
+# (The pipeline still reads these folders locally; they were in history before this rule.)
+pipeline/transcriptions/*
+!pipeline/transcriptions/core/
+output/codex-bestiary-backers-checked-rows.json
+# Art briefs that quote paid creature cards word for word
+docs/void-creature-art-brief.md
+docs/bestiary-missing-art.md

@@ -48,7 +48,7 @@ describe("room story", () => {
   it("title-cases the book's capitals", () => {
     expect(titleCase("MASON’S WORKSHOP")).toBe("Mason’s Workshop");
     expect(titleCase("HALL OF THE DEAD")).toBe("Hall of the Dead");
-    expect(softCaps("QUIET TIMES - Mist settles in the dips.")).toBe("Quiet Times - Mist settles in the dips.");
+    expect(softCaps("DRIFTING FOG - Mist pools by the old well.")).toBe("Drifting Fog - Mist pools by the old well.");
     expect(softCaps("POTION OF PHASING")).toBe("Potion of Phasing");
     expect(softCaps("A rat, nothing more")).toBe("A rat, nothing more");
   });

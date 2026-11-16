@@ -2,9 +2,10 @@
 // the tools on it) must work without it, and must never show the Dungeon's unlocked books in Void.
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getContent, initContent, isLocked, manifest, sectionIds, voidBookLoaded, voidLibraryLoaded } from "../src/content";
+import { firstLocked, getContent, initContent, isLocked, manifest, sectionIds, voidBookLoaded, voidLibraryLoaded } from "../src/content";
 import { _setGameForTest, GAMES } from "../src/games";
 import { forgetAll, putBook, putSections, useGameStore } from "../src/lock/store";
+import { lib, rebuildLibrary } from "../src/library";
 import { logNodes } from "../src/tools/combatlog";
 import { html } from "../src/ui/html";
 import type { Section } from "../src/types";
@@ -91,6 +92,16 @@ describe("2D6 Void is a locked game", () => {
     expect(r && !r.ok && r.locked.bookName).toBe("2D6 Void");
   });
 
+  it("in development, a section the local library holds is not locked (Home's Library card asks)", async () => {
+    useGameStore("void");
+    await forgetAll();
+    _setGameForTest("void");
+    await initContent(async (p) => p === "data/manifest-void.json" ? manifestJson
+      : { books: [{ slug: "void", title: "2D6 Void", missing_pages: [], page_images: [] }], sections: [{ ...voidSection, id: "void/p60-1" }] });
+    expect(isLocked("void/p60-1")).toBe(false);
+    expect(firstLocked("void")).toBeUndefined(); // no locked placeholder to point at, so no lock label to read
+  });
+
   it("unlocks once the owner's book is stored, in Void's own database", async () => {
     useGameStore("void");
     await forgetAll();
@@ -100,6 +111,10 @@ describe("2D6 Void is a locked game", () => {
     await initContent(fetcher);
     expect(voidBookLoaded()).toBe(true);
     expect(isLocked("void/p60-1")).toBe(false);
+    // a release has no library file: the book list comes from the manifest, so the unlocked section has its book
+    rebuildLibrary();
+    expect(lib.books.map((b) => [b.slug, b.title])).toEqual([["void", "2D6 Void"]]);
+    expect(lib.sections.map((s) => s.id)).toEqual(["void/p60-1"]);
     // the Dungeon's database never sees it
     useGameStore("dungeon");
     _setGameForTest("dungeon");

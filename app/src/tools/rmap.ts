@@ -73,6 +73,19 @@ export function placeArea(start: Cell, size: number, occ: Set<string>, rnd = Mat
 }
 
 /**
+ * An even pick of 0..n-1 (n up to 6) from a D6: rolls above the largest multiple of n are rolled again, so
+ * four options get 1-4 and a 5 or 6 is re-rolled, never folded onto two of them.
+ */
+export function fairIndex(n: number, d6: () => number): number {
+  const top = Math.floor(6 / n) * n;
+  for (let tries = 0; tries < 50; tries++) {
+    const v = d6();
+    if (v >= 1 && v <= top) return (v - 1) % n;
+  }
+  return 0; // a die that never lands in range (a stubbed one): the first option
+}
+
+/**
  * String: start square, a 2nd square (random free neighbour if not given), then `extra`
  * steps by D6 over the free sides relative to the direction of travel.
  */
@@ -85,7 +98,7 @@ export function placeString(start: Cell, extra: number, d6: () => number, second
   if (!next || !free(next)) {
     const opts = N4.map(([dx, dy]) => [start[0] + dx, start[1] + dy] as Cell).filter(free);
     if (!opts.length) return { cells, rolls: ["No room to extend: the string stays one square."] };
-    next = opts[Math.floor(d6() / 6.0001 * opts.length)];
+    next = opts[fairIndex(opts.length, d6)];
   }
   cells.push(next);
   has.add(key(next));

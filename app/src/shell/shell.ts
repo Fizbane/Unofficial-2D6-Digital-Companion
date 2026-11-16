@@ -9,19 +9,25 @@ import { initTabs, isValidRoute, type Tabs } from "./tabs";
 import { initLayout, railMode } from "./layout";
 import { initSearch } from "./search";
 import { initRail } from "./rail";
+import { startNewCharacter } from "./charpick";
+import { isVoid } from "../games";
 import { initTree } from "./tree";
 import { badge, initRightPanel, showPanel, type PanelId } from "./rightpanel";
 import { initTopbar } from "./topbar";
 import { initResults } from "./panels/results";
 import { initBottomBar } from "./bottombar";
+import { initDiceFab } from "./dicefab";
 import { initNotes } from "./panels/notes";
 import { initJournal } from "./journal";
 import { initAchievements } from "./achievements";
+import { initStatistics } from "./statistics";
 import { achToast, initAchToast } from "./achtoast";
 import { initJournalPanel } from "./panels/journal";
+import { initCombatLog } from "./panels/combatlog";
 import { clearDice } from "../dice3d";
 import { initUnlockActions } from "../ui/locked";
 import { html, raw, setHTML, type Raw } from "../ui/html";
+import { RELOAD_TOAST, stageReloadToast } from "./reloadtoast";
 
 export type { PanelId };
 
@@ -42,6 +48,7 @@ let toastTimer = 0;
 export function toast(msg: string) {
   const t = document.getElementById("toast")!;
   t.textContent = msg;
+  t.classList.remove("is-leaving");
   // restart the slide-up when a toast replaces one still showing
   if (!t.hidden) {
     t.hidden = true;
@@ -49,10 +56,15 @@ export function toast(msg: string) {
   }
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (t.hidden = true), 4000);
+  toastTimer = window.setTimeout(() => {
+    // slide back out, then hide (160ms = --dur)
+    t.classList.add("is-leaving");
+    toastTimer = window.setTimeout(() => {
+      t.hidden = true;
+      t.classList.remove("is-leaving");
+    }, 160);
+  }, 4000);
 }
-
-const RELOAD_TOAST = "2d6-companion:reload-toast"; // sessionStorage: not part of a backup
 
 /**
  * Reload the page and show `msg` once it is back. Used after Settings replaces or clears saved
@@ -60,11 +72,7 @@ const RELOAD_TOAST = "2d6-companion:reload-toast"; // sessionStorage: not part o
  * old state and write it back over the new data. Nothing in the app writes on unload.
  */
 export function reloadWithToast(msg: string) {
-  try {
-    sessionStorage.setItem(RELOAD_TOAST, msg);
-  } catch {
-    /* no sessionStorage: reload without the message */
-  }
+  stageReloadToast(msg);
   location.reload();
 }
 
@@ -120,6 +128,18 @@ export function buildShell(mount: HTMLElement): Tabs {
       <aside class="tree" aria-label="Contents"></aside>
       <main class="centre"></main>
       <aside class="panel" aria-label="Side panel"></aside>
+      <footer class="legal" aria-label="Copyright and licence">
+        <details class="legal-more">
+          <summary>Legal</summary>
+          <div class="legal-full">
+            <p>Unofficial 2D6 Digital (2D6 Companion) is an independent production by Fizbane and is not affiliated with DR Games or Toby Lancaster. It is published under the <a href="https://drgames.co.uk/2d6-3rd-party-licence/" target="_blank" rel="noopener noreferrer">2D6 Dungeon Third Party License</a>. 2D6 Dungeon is copyright of DR Games and Toby Lancaster.</p>
+            <p>The 2D6 Dungeon, 2D6 Realm and 2D6 Void names, branding, logos, rules, text and art are the copyright and property of Toby Lancaster and DR Games.</p>
+            <p>The app is provided "as is", without warranty of any kind. The books' text and art are not included: they are read from your own PDF, on your device only.</p>
+            <p>Please do not contact Toby Lancaster or DR Games for support with this tool. Questions about it are not theirs to answer.</p>
+          </div>
+        </details>
+        <p class="legal-line">Unofficial and fan-made, provided "as is". 2D6 Dungeon and Void are copyright of DR Games and Toby Lancaster.</p>
+      </footer>
     </div>`);
 
   const q = <T extends HTMLElement>(sel: string) => mount.querySelector(sel) as T;
@@ -144,7 +164,9 @@ export function buildShell(mount: HTMLElement): Tabs {
   // achievements record from boot too; each unlock shows a card that opens the Achievements page
   initAchToast(() => openTab("#/play/achievements"));
   initAchievements(achToast);
+  initStatistics(); // the statistics page reads these; they record from boot like the achievements
   initJournalPanel(panes.get("journal")!, { openTab, toast });
+  initCombatLog(panes.get("combat")!, { inline: (s) => inline(s) });
 
   const tabsReady = initTabs(q(".centre"), {
     lib,
@@ -163,7 +185,11 @@ export function buildShell(mount: HTMLElement): Tabs {
   search = s;
   const active = () => (tabsReady.model.active ? tabsReady.model.current(tabsReady.model.active) : null);
   const tree = initTree(q(".tree"), { mode: railMode(layout.state), events: bus, active, openRoute: (route, opts) => tabsReady.open(route, opts) });
-  initRail(q(".rail"), { layout, tree, openSearch: () => s.open(), openTab, hasRoute: isValidRoute });
+  initRail(q(".rail"), {
+    layout, tree, openSearch: () => s.open(), openTab, hasRoute: isValidRoute, toast,
+    newCharacter: () => startNewCharacter(isVoid(), byId),
+    levelOf: async (xp, cls) => (await import("../tools/sheet")).levelOf(xp, cls),
+  });
   // narrow screens: opening a page from the contents drawer closes it
   const closeTreeDrawer = () => {
     if (layout.bp === "narrow" && layout.shown("tree")) layout.toggle("tree", true);
@@ -173,7 +199,8 @@ export function buildShell(mount: HTMLElement): Tabs {
     if ((e.target as HTMLElement).closest("a.tr-link")) setTimeout(closeTreeDrawer); // after the link has navigated
   });
 
-  initBottomBar(q(".charbar"), { toast, openTab, isSearchOpen: () => s.isOpen() });
+  initBottomBar(q(".charbar"), { chipsSlot: q(".topbar-chars"), popHost: q(".topbar"), toast, openTab, isSearchOpen: () => s.isOpen() });
+  initDiceFab({ openTab });
   // tap anywhere on the thrown dice to sweep them away
   document.getElementById("dice-layer")?.addEventListener("click", () => clearDice());
   takeReloadToast();

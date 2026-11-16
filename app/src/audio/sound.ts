@@ -4,6 +4,7 @@
 // (old browsers, tests) every call does nothing.
 import { bus } from "../shell/events";
 import { getPrefs, type Prefs } from "../shell/prefs";
+import { readState, writeState } from "../shell/state";
 import { SFX, STINGS, TRACKS, sfxUrl, stingUrl, trackUrl, type SfxId, type StingId, type TrackId } from "./manifest";
 import { getSongFile, nextEntry, onPlaylistChange, queueFor } from "./playlist";
 
@@ -26,7 +27,15 @@ let playing: { id: string; user: boolean; src: AudioBufferSourceNode; gain: Gain
 // different one (a fight starting, say), and pause holds until play or a skip.
 let picked: string | null = null; // a built-in track id or one of the player's own song ids
 let pickedOver: TrackId | null = null; // the game's track when the pick was made
-let paused = false;
+// Pausing is remembered on this device, so music the player stopped stays stopped after a reload or
+// the next time the app opens (it then starts from the top of the track when they press play).
+const PAUSED_KEY = "2d6:shell:music-paused";
+let paused = readState(PAUSED_KEY, (v): v is boolean => typeof v === "boolean", () => false);
+const setPaused = (p: boolean) => {
+  if (paused === p) return;
+  paused = p;
+  writeState(PAUSED_KEY, p);
+};
 let resumeAt: { id: string; offset: number } | null = null;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((f) => f());
@@ -101,7 +110,9 @@ export function setMusic(id: TrackId | null): void {
 }
 
 /** The enabled songs for the current scene (the playlist decides; the game's own pick leads). */
-const queue = () => queueFor(wanted, Object.keys(TRACKS));
+const queue = () => queueFor(wanted, Object.keys(TRACKS)).filter((e) => !failed.has(e.id));
+/** The player's songs that couldn't be played this session (file missing, or a format the browser can't decode): left out of the queue. */
+const failed = new Set<string>();
 /** The song to play: the player's pick (while it is still enabled), else the first enabled song for the scene. */
 function chosen(): string | null {
   if (picked && queue().some((e) => e.id === picked)) return picked;
@@ -111,7 +122,7 @@ function chosen(): string | null {
 
 /** Pause or resume the music (it picks up where it stopped). */
 export function toggleMusicPause(): void {
-  paused = !paused;
+  setPaused(!paused);
   void syncMusic();
   emit();
 }
@@ -123,7 +134,7 @@ export function skipMusic(dir: 1 | -1): void {
   const i = ids.indexOf(playing?.id ?? chosen() ?? ids[0]);
   picked = ids[(i + dir + ids.length) % ids.length];
   pickedOver = wanted;
-  paused = false;
+  setPaused(false);
   resumeAt = null;
   void syncMusic();
   emit();
@@ -166,7 +177,14 @@ async function syncMusic() {
     return blob.arrayBuffer();
   } : undefined);
   // another change may have happened while it loaded
-  if (!buf && user) { picked = null; return void (queue().length && want() === target ? syncMusic() : undefined); } // a missing file: skip it
+  if (!buf && user) {
+    // a missing or unreadable file: leave it out for this session and play what is next. Never retry the same
+    // song (that looped for ever when it was the only one); each failure shrinks the queue, so this ends.
+    failed.add(target);
+    picked = null;
+    emit();
+    return void syncMusic();
+  }
   if (!buf || !ctx || !musicBus || want() !== target || playing?.id === target) return;
   fadeOut();
   const tr = (user ? undefined : TRACKS[target as TrackId]) ?? { loopStart: 0, volume: 0.8 };

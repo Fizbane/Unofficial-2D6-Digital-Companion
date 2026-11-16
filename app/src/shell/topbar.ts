@@ -30,6 +30,7 @@ export function initTopbar(header: HTMLElement, o: TopbarOptions): HTMLElement {
     <a href="#/" class="brand" aria-label="${game().name} home" aria-current="true"><img class="brand-logo" src="${game().logo}" alt="${game().logoAlt}"><span class="brand-text">${game().name}</span></a>
     <span class="game-switch">${GAME_IDS.filter((g) => g !== gameId()).map((g) =>
       html`<button type="button" class="game-other" data-game="${g}" aria-label="Switch to ${GAMES[g].name}" title="Switch to ${GAMES[g].name}"><img src="${GAMES[g].logo}" alt=""></button>`)}</span>
+    <div class="topbar-chars"></div>
     <div class="topbar-centre"><button type="button" class="topbar-status" hidden></button></div>
     <button type="button" id="search-btn" class="search-trigger" aria-label="Search">${icon("search", { size: 16 })}<span>Search rules &amp; tables…</span><kbd>/</kbd></button>
     <button type="button" id="panel-btn" class="icon-btn" data-panel-toggle aria-label="Side panel" title="Side panel" aria-expanded="false">${icon("panel-right")}</button>

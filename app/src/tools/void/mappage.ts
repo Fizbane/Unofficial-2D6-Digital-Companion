@@ -6,7 +6,8 @@
 import type { ToolContext } from "../../main";
 import { CELL, downloadMapPng, mapHint, openExits, renderMap, type DungeonMap, type MapRoom } from "../dmap";
 import { getMapView } from "../dmaptiles";
-import { load, save } from "../common";
+import { fitMapToSpace } from "../mapfit";
+import { load, playKey, save } from "../common";
 import { html, setHTML, type Raw } from "../../ui/html";
 import { button, eyebrow, statBlock } from "../../ui/components";
 import { icon } from "../../ui/icon";
@@ -42,12 +43,42 @@ const ladderIcon = (x: number, y: number, up: boolean): Raw => {
   }<path d="${arrow}" fill="none" stroke="${up ? "#6bff8a" : "#ffb627"}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>`;
 };
 
+/**
+ * The part of the 17 × 28 hull worth showing: everything drawn so far (rooms, exits, the up-ladder)
+ * plus a margin for what comes next, never smaller than 10 × 10 squares and kept inside the hull.
+ * Cropping to it lets the map fill its space instead of leaving most of the hull blank.
+ */
+export function hulkViewBox(m: DungeonMap, st: Pick<HulkMapSaved, "ladderIn">): { x: number; y: number; w: number; h: number } {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x: number, y: number, w: number, h: number) => {
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h);
+  };
+  for (const r of m.rooms) add(r.x, r.y, r.w, r.h);
+  for (const e of m.exits) add(e.x, e.y, 1, 1);
+  if (st.ladderIn) add(st.ladderIn.x, st.ladderIn.y, 1, 1);
+  if (x0 === Infinity) return { x: 0, y: 0, w: m.w, h: m.h };
+  const MARGIN = 2, MIN = 10;
+  const fit = (lo: number, hi: number, max: number): [number, number] => {
+    lo = Math.max(0, lo - MARGIN); hi = Math.min(max, hi + MARGIN);
+    const extra = MIN - (hi - lo);
+    if (extra > 0) {
+      lo = Math.max(0, lo - Math.ceil(extra / 2));
+      hi = Math.min(max, lo + MIN);
+      lo = Math.max(0, hi - MIN);
+    }
+    return [lo, hi];
+  };
+  const [cx0, cx1] = fit(x0, x1, m.w), [cy0, cy1] = fit(y0, y1, m.h);
+  return { x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 };
+}
+
 /** The Hulk map: dmap's drawing in the chosen style, plus ladders, the Void Chamber and Void Portals (top-down view). */
 export function renderHulkMap(st: HulkMapSaved, focus: number | null = null, current: number | null = st.current?.mapRoom ?? null): Raw {
   const m = st.map ?? hulkMap();
   const label = `Dark Hulk level ${st.level} map`;
   // the isometric view draws its own stairs; the extras are top-down only
   if (getMapView() === "iso") return renderMap(m, current, focus, undefined, undefined, { label });
+  const crop = hulkViewBox(m, st);
   const over: Raw[] = [];
   if (st.ladderIn) over.push(ladderIcon(st.ladderIn.x, st.ladderIn.y, true));
   const down = m.stairs !== null ? m.rooms.find((r) => r.id === m.stairs) : undefined;
@@ -69,7 +100,7 @@ export function renderHulkMap(st: HulkMapSaved, focus: number | null = null, cur
     const r = m.rooms.find((x) => x.id === p.room);
     if (r) over.push(html`<g pointer-events="none"><title>Void Portal ${p.n}</title>${swirl((r.x + 0.5) * C, (r.y + 0.5) * C + (r.h > 1 ? C / 2 : 0), 7, p.n)}</g>`);
   }
-  return renderMap(m, current, focus, undefined, undefined, { label, overlay: over.length ? html`${over}` : undefined });
+  return renderMap(m, current, focus, undefined, undefined, { label, crop, overlay: over.length ? html`${over}` : undefined });
 }
 
 const LEGEND: [string, string][] = [["#b89a6a", "Archway"], ["#8fa3b5", "Sliding door"], ["#d9a521", "Security door"], ["#3f9a5a", "Bio-coded door"], ["#38c6ff", "Electrical barrier"], ["#6b6f75", "Secret panel"]];
@@ -124,8 +155,8 @@ export function mountHulkMap(host: HTMLElement, o: HulkMapOpts): HulkMapView {
     if (!m || !m.rooms.length)
       return o.embedded
         ? html`<div class="map-empty"><p class="muted">The map draws itself as you go. Start the level to draw the entrance room.</p></div>`
-        : html`<div class="map-empty"><p class="muted">No rooms yet: start in Hulk turn.</p>
-          ${button("Open Hulk turn", { icon: "door-closed", variant: "ghost", size: "sm", attrs: html`data-map-act="open-hulk"` })}</div>`;
+        : html`<div class="map-empty"><p class="muted">No rooms yet: begin in Start Game.</p>
+          ${button("Open Start Game", { icon: "door-closed", variant: "ghost", size: "sm", attrs: html`data-map-act="open-hulk"` })}</div>`;
     const open = openExits(m).length;
     const pct = exploredPct(m, st.voidChamber ? [st.voidChamber] : []);
     const side = !o.embedded && m.rooms.some((x) => x.id === focus);
@@ -216,7 +247,7 @@ export function mountHulkMap(host: HTMLElement, o: HulkMapOpts): HulkMapView {
     }),
   );
   const onStorage = (e: StorageEvent) => {
-    if (e.key?.endsWith(":play:vhulk")) refresh();
+    if (e.key === playKey(HULK_KEY)) refresh();
   };
   window.addEventListener("storage", onStorage);
   o.onDispose(() => window.removeEventListener("storage", onStorage));
@@ -238,9 +269,11 @@ export function render(root: HTMLElement, ctx: ToolContext) {
   const st = loadHulk();
   setHTML(root, html`
     <header class="play-head">
-      <div class="play-title">${eyebrow(`Play · Level ${st.level}`)}<h1>${icon("map", { size: 26 })}<span>Hulk map</span></h1></div>
-      <div class="play-actions"><a class="btn btn-ghost" href="#/play/vhulk">${icon("door-closed", { size: 17 })}<span>Hulk turn</span></a></div>
+      <div class="play-title">${eyebrow(`Level ${st.level}`)}<h1>${icon("map", { size: 26 })}<span>Hulk map</span></h1></div>
+      <div class="play-actions"><a class="btn btn-ghost" href="#/play/vhulk">${icon("door-closed", { size: 17 })}<span>Start Game</span></a></div>
     </header>
     <section class="card map-card"><div class="map-body"></div></section>`);
-  mountHulkMap(root.querySelector<HTMLElement>(".map-body")!, { source: "vmap-page", openTab: ctx.openTab, toast: ctx.toast, onDispose: ctx.onDispose });
+  const body = root.querySelector<HTMLElement>(".map-body")!;
+  mountHulkMap(body, { source: "vmap-page", openTab: ctx.openTab, toast: ctx.toast, onDispose: ctx.onDispose });
+  fitMapToSpace(body, ctx.onDispose);
 }

@@ -50,6 +50,13 @@ describe("collectBackup", () => {
     expect(Object.keys(data).sort()).toEqual(["2d6:fixes", "2d6:play:realm"]);
     validateBackup({ app: "2d6-companion", data });
   });
+
+  it("leaves out what belongs to this device (backup folder, playlist), and drops it from an older backup", () => {
+    const store: Record<string, string> = { "2d6:shell:backup": "{}", "2d6:shell:playlist": "{}", "2d6:shell:prefs": "{}" };
+    const ls = { length: 3, key: (i: number) => Object.keys(store)[i] ?? null, getItem: (k: string) => store[k] ?? null };
+    expect(Object.keys(collectBackup(ls).data)).toEqual(["2d6:shell:prefs"]);
+    expect(Object.keys(validateBackup({ app: "2d6-companion", data: store }).data)).toEqual(["2d6:shell:prefs"]);
+  });
 });
 
 describe("validateFixes", () => {

@@ -64,7 +64,7 @@ describe("lockedCard", () => {
   });
 
   it("labels a locked page with the book and page only", () => {
-    expect(lockedLabel({ book: "codex", bookName: "Tables Codex", page: 52 })).toBe("🔒 Tables Codex · p. 52");
+    expect(lockedLabel({ book: "codex", bookName: "Codex Full", page: 52 })).toBe("🔒 Codex Full · p. 52");
   });
 });
 
@@ -100,7 +100,7 @@ describe("library on the gateway", () => {
     data["2d6:bookmarks"] = JSON.stringify(["codex/p52-1"]);
     const { marks } = homeLists();
     expect(marks).toHaveLength(1);
-    expect(String(marks[0])).toContain("🔒 Tables Codex · p. 52");
+    expect(String(marks[0])).toContain("🔒 Codex Full · p. 52");
   });
 
   it("indexes and searches only free and unlocked sections", () => {
@@ -116,15 +116,15 @@ describe("library on the gateway", () => {
   it("tableByCode returns a locked result for a locked code", () => {
     const free = tableByCode("enat1");
     expect(free && "table" in free && free.sectionId).toBe(freeSection.id);
-    expect(tableByCode("ENAT2")).toEqual({ locked: { book: "codex", bookName: "Tables Codex", page: 52 } });
-    expect(tableFor("codex/p52-1")).toEqual({ locked: { book: "codex", bookName: "Tables Codex", page: 52 } });
+    expect(tableByCode("ENAT2")).toEqual({ locked: { book: "codex", bookName: "Codex Full", page: 52 } });
+    expect(tableFor("codex/p52-1")).toEqual({ locked: { book: "codex", bookName: "Codex Full", page: 52 } });
     expect(tableByCode("NOPE1")).toBeUndefined();
     expect(tableFor(OLD)).toBeUndefined();
   });
 
   it("routes: a locked id is valid and titled by its label; an unknown id is not", () => {
     expect(isValidRoute("#/s/codex%2Fp52-1")).toBe(true);
-    expect(routeTitle("#/s/codex%2Fp52-1")).toBe("🔒 Tables Codex · p. 52");
+    expect(routeTitle("#/s/codex%2Fp52-1")).toBe("🔒 Codex Full · p. 52");
     expect(isValidRoute(`#/s/${encodeURIComponent(OLD)}`)).toBe(false);
   });
 });
@@ -151,5 +151,16 @@ describe("tool table keys", () => {
     // free level 1 rolls; a locked level-2 table is locked
     expect(tableFor("codex/ext1-exit-type-table-1") && "table" in tableFor("codex/ext1-exit-type-table-1")!).toBe(true);
     expect(tableFor("EXT2")).toMatchObject({ locked: { book: "codex" } });
+  });
+});
+
+describe("lockedCard inside a step-by-step page", () => {
+  it("can be quiet: its Unlock button is not the page's primary action", async () => {
+    const { lockedCard, lockedCards } = await import("../src/ui/locked");
+    const l = { book: "codex", bookName: "Tables Codex", page: 44 } as Parameters<typeof lockedCard>[0];
+    expect(String(lockedCard(l))).toContain("btn-primary");
+    expect(String(lockedCard(l, true))).not.toContain("btn-primary");
+    expect(String(lockedCard(l, true))).toContain('data-act="unlock"');
+    expect(String(lockedCards([l], true))).not.toContain("btn-primary");
   });
 });

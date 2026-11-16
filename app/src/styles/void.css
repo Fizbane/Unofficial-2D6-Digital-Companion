@@ -35,10 +35,14 @@
 }
 .vhulk-check { display: inline-flex; align-items: center; gap: 6px; font: 0.85rem var(--font-ui); cursor: pointer; }
 
-/* the hull is portrait (17 × 28): keep it whole on screen */
-.vmapview .dmap { max-height: calc(100dvh - 220px); width: auto; max-width: 100%; }
+/* the hull is portrait (17 × 28): scale it like Dungeon's map (the full width it is given, centred),
+   capped so the whole hull stays on screen. mapfit.ts sets --map-fit to the room the page has left; the
+   cap never goes below a floor that keeps the hull readable (roughly 360px wide at most), so in a small window
+   or a narrow column the page scrolls instead of the map shrinking to a sliver */
+.vmapview { --vmap-floor: max(360px, min(120cqw, 520px)); }
+.vmapview .dmap { width: 100%; max-width: none; height: auto; margin: 0 auto; max-height: max(var(--vmap-floor), var(--map-fit, calc(100dvh - 220px))); }
 .dturn-map .vmapview .dmap { max-height: 70dvh; }
-.vmap-page .vmapview .dmap { max-height: max(420px, calc(100dvh - 200px)); }
+.vmap-page .vmapview .dmap { max-height: max(var(--vmap-floor), var(--map-fit, calc(100dvh - 200px))); }
 @media (min-width: 900px) {
   @container dturn (min-width: 700px) {
     .dturn-map .vmapview .dmap { max-height: calc(100dvh - 300px); min-height: 320px; }

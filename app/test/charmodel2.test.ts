@@ -15,17 +15,17 @@ describe("clampXp", () => {
 describe("applyXp", () => {
   it("sets XP and reports no change inside a level", () => {
     const c = { xp: 10, hp: 8, lastLevel: 1 };
-    expect(applyXp(c, 50, LV)).toEqual({ from: 1, to: 1 });
+    expect(applyXp(c, 50, LV)).toMatchObject({ from: 1, to: 1 });
     expect(c).toEqual({ xp: 50, hp: 8, lastLevel: 1 });
   });
   it("levels up like the sheet: +10 HP per new level and lastLevel follows", () => {
     const c = { xp: 90, hp: 8, lastLevel: 1 };
-    expect(applyXp(c, 600, LV)).toEqual({ from: 1, to: 3 });
+    expect(applyXp(c, 600, LV)).toMatchObject({ from: 1, to: 3 });
     expect(c).toEqual({ xp: 600, hp: 28, lastLevel: 3 });
   });
   it("a correction below a threshold takes the level-up HP back (10 per level dropped)", () => {
     const c = { xp: 120, hp: 18, lastLevel: 2 };
-    expect(applyXp(c, 99, LV)).toEqual({ from: 2, to: 1 });
+    expect(applyXp(c, 99, LV)).toMatchObject({ from: 2, to: 1 });
     expect(c).toEqual({ xp: 99, hp: 8, lastLevel: 1 });
   });
   it("an XP round trip across a threshold leaves HP unchanged", () => {
@@ -37,7 +37,7 @@ describe("applyXp", () => {
   });
   it("a two-level drop removes 20 HP", () => {
     const c = { xp: 600, hp: 30, lastLevel: 3 };
-    expect(applyXp(c, 50, LV)).toEqual({ from: 3, to: 1 });
+    expect(applyXp(c, 50, LV)).toMatchObject({ from: 3, to: 1 });
     expect(c.hp).toBe(10);
   });
   it("HP never drops below 0 on a correction", () => {
@@ -148,12 +148,12 @@ import { addXp } from "../src/shell/charmodel";
 describe("addXp (XP gained in play, e.g. Combat's bank XP)", () => {
   it("applies the level-up at once: +10 HP and lastLevel", () => {
     const c = { xp: 80, hp: 6, lastLevel: 1 };
-    expect(addXp(c, 30, LV)).toEqual({ from: 1, to: 2 });
+    expect(addXp(c, 30, LV)).toMatchObject({ from: 1, to: 2 });
     expect(c).toEqual({ xp: 110, hp: 16, lastLevel: 2 });
   });
   it("adds plain XP inside a level", () => {
     const c = { xp: 10, hp: 6, lastLevel: 1 };
-    expect(addXp(c, 5, LV)).toEqual({ from: 1, to: 1 });
+    expect(addXp(c, 5, LV)).toMatchObject({ from: 1, to: 1 });
     expect(c).toEqual({ xp: 15, hp: 6, lastLevel: 1 });
   });
   it("crossing two thresholds grants both levels", () => {

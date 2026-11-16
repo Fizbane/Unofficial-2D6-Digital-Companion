@@ -3,7 +3,9 @@
 //   node scripts/check-dist.mjs --audit    scan app/src and docs/spec-*.md instead (source audit)
 // Phrase list: pipeline/work/phrases.json (private, gitignored), or the path in env D6_PHRASES.
 // If it is missing (CI, clean clone) the book-text scan is SKIPPED with a loud banner, but the structural and
-// manifest checks still run, so public builds work. Set D6_REQUIRE_PHRASES=1 to make a missing list a failure.
+// manifest checks still run, so public builds work. Set D6_REQUIRE_PHRASES=1, or pass --require-phrases (what the
+// release scripts do), to make a missing list a failure. 2D6 Void's list, phrases-void.json beside it, is held
+// to the same rule: missing is a banner, or a failure when lists are required.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -234,7 +236,7 @@ const DICE = /^(1D6|2D6|D66|[0-9D+]{2,8})$/;
 const FP = /^[0-9a-f]{64}$/;
 const EDITION = /^[a-z0-9]{1,12}(?:-[a-z0-9]{1,12})?$/;
 const SLUG = /^[a-z]+$/;
-const BOOK_NAMES = ["Core Rules", "Tables Codex", "Realm", "2D6 Void"];
+const BOOK_NAMES = ["Core Rules", "Tables Codex", "Realm", "Animal Companions", "Lairs Omnibus", "Legendary Dungeon", "2D6 Void", "PAL-BOT", "Space Pirates"];
 const oneOf = (...v) => ({ test: (s) => v.includes(s) });
 // Generalised path (array indexes as "#") -> what a string value there may be.
 const VALUES = [
@@ -327,10 +329,13 @@ const banner = (file, require) => [
   "check-dist: ################################################################",
   `check-dist: WARNING: phrase list not found at ${file}`,
   "check-dist: the book-text scan was SKIPPED. Only structural and manifest checks ran.",
-  "check-dist: set D6_PHRASES to the list, or D6_REQUIRE_PHRASES=1 to make this fail.",
-  ...(require ? ["check-dist: D6_REQUIRE_PHRASES=1 is set, so this is a failure."] : []),
+  "check-dist: set D6_PHRASES to the list; D6_REQUIRE_PHRASES=1 or --require-phrases makes this fail.",
+  ...(require ? ["check-dist: phrase lists are required for this run, so this is a failure."] : []),
   "check-dist: ################################################################",
 ];
+
+/** 2D6 Void's own phrase list sits beside the Dungeon one: phrases.json -> phrases-void.json. */
+export const voidPhrasesFile = (phrasesFile) => phrasesFile.replace(/phrases\.json$/, "phrases-void.json");
 
 /** Runs the whole dist check. Returns { code, findings, warnings } without printing or exiting. */
 export function check({ dist, phrasesFile, require }) {
@@ -340,11 +345,18 @@ export function check({ dist, phrasesFile, require }) {
   findings.push(...structural(dist), ...fileTypeFindings(dist), ...manifestFindings(dist));
   if (!existsSync(phrasesFile)) {
     warnings.push(...banner(phrasesFile, require));
-    if (require) findings.push("phrase list missing and D6_REQUIRE_PHRASES=1");
+    if (require) findings.push("phrase list missing, and phrase lists are required");
   } else {
-    // 2D6 Void's own phrase list sits beside the Dungeon one (phrases.json -> phrases-void.json), when built
-    const voidFile = phrasesFile.replace(/phrases\.json$/, "phrases-void.json");
-    const lists = [loadPhrases(phrasesFile), ...(voidFile !== phrasesFile && existsSync(voidFile) ? [loadPhrases(voidFile)] : [])];
+    const lists = [loadPhrases(phrasesFile)];
+    const voidFile = voidPhrasesFile(phrasesFile);
+    if (voidFile !== phrasesFile) {
+      if (existsSync(voidFile)) lists.push(loadPhrases(voidFile));
+      else {
+        // never silently: without it 2D6 Void (and its expansions) is not checked at all
+        warnings.push(...banner(voidFile, require));
+        if (require) findings.push("2D6 Void phrase list missing, and phrase lists are required");
+      }
+    }
     for (const h of scan(dist, lists.flat())) findings.push(describe(h));
   }
   return { code: findings.length ? 1 : 0, findings, warnings };
@@ -352,13 +364,15 @@ export function check({ dist, phrasesFile, require }) {
 
 function main() {
   const file = resolve(process.env.D6_PHRASES || join(repoDir, "pipeline", "work", "phrases.json"));
-  const require = process.env.D6_REQUIRE_PHRASES === "1";
+  const require = process.env.D6_REQUIRE_PHRASES === "1" || process.argv.includes("--require-phrases");
   if (process.argv.includes("--audit")) {
     if (!existsSync(file)) {
       console.warn(banner(file, false).join("\n"));
       return 0;
     }
-    const phrases = loadPhrases(file);
+    const voidFile = voidPhrasesFile(file);
+    if (voidFile !== file && !existsSync(voidFile)) console.warn(banner(voidFile, false).join("\n"));
+    const phrases = [...loadPhrases(file), ...(voidFile !== file && existsSync(voidFile) ? loadPhrases(voidFile) : [])];
     const docs = join(repoDir, "docs");
     const targets = [join(appDir, "src"), ...readdirSync(docs).filter((n) => /^spec-.*\.md$/.test(n)).map((n) => join(docs, n))];
     const findings = [];

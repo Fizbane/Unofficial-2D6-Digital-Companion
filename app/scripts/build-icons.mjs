@@ -9,7 +9,7 @@ const NAMES = [
   "more-horizontal", "file-text", "trash", "download", "upload", "minus", "menu", "check",
   "shield", "skull", "trophy", "crosshair", "zap", "heart", "door-closed", "utensils", "arrow-down", "circle-x", "key-round",
   "arrow-up", "arrow-left-right", "compass", "calendar", "flag", "coins", "hammer", "landmark", "backpack", "wand-sparkles", "sun-moon", "type", "layout-grid", "crown", "droplet", "triangle-alert", "sparkles", "book-open", "gem", "hard-hat",
-  "skip-back", "skip-forward", "pause", "play",
+  "skip-back", "skip-forward", "pause", "play", "house", "grip-vertical", "table", "chart-column",
 ];
 
 // Our name -> lucide-static file name, where they differ.

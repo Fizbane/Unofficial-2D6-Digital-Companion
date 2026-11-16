@@ -40,6 +40,7 @@ export function initAudio(): void {
       const b = (e.target as HTMLElement | null)?.closest?.("button, [role=tab], summary");
       if (!b || (b as HTMLButtonElement).disabled) return;
       if (b.closest(".tree")) return; // browsing the library contents stays silent
+      if (b.closest(".tb-tab, [role=tab]")) return; // so does switching or closing a tab
       playSfx("click", { gap: 60 });
     },
     { capture: true },

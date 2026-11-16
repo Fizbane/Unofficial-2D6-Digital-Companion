@@ -1,10 +1,12 @@
 // Isometric view of the dungeon map. Same rooms, exits, dressing and tile sets as the top-down
 // view, drawn as raised floor slabs over a dark void: back walls (north and west) stand up, front
 // walls (south and east) are cut down to a low stub so you can see into every room.
-import { DIR, NOTE_PENCIL, exitLabel, f1, floorTextureSvg, footprintsSvg, mapScene, openExits, rnd, stone, type DungeonMap, type MapExit, type MapRoom, type Side } from "./dmap";
+import { DIR, NOTE_PENCIL, entranceStep, insideEntrance, cornerCell, exitLabel, exploredBounds, f1, floorLightDef, floorTextureSvg, footprintsSvg, mapScene, openExits, rnd, sealedDungeonRooms, sealedRoomsSvg, secretDoorMarker, stone, type DungeonMap, type MapExit, type MapRoom, type Side } from "./dmap";
+import { outlinePath, roomCells, roomPath } from "./dmapshape";
 import { itemSvg, type DecorItem } from "./dmapdecor";
 import { CENTRE_FLAT, FACE_ART, HX, HY, WALL_H, cyl, doorFace, iso, isoItem, shade, sphere } from "./dmapisoart";
-import { getTileSetId, tileSetById, type TileSet } from "./dmaptiles";
+import { getMapTurn, getTileSetId, tileSetById, type TileSet } from "./dmaptiles";
+import { normTurn, rotateCell, rotateDecor, rotateMap } from "./dmaprotate";
 import { html, type Raw } from "../ui/html";
 
 const C = 26; // top-down px per square (same as dmap.ts; not imported, to keep module loading order simple)
@@ -42,37 +44,36 @@ function wallFace(T: TileSet, h: number, alongX: boolean, seed: number, ends: [b
 }
 
 /** Draw the map in isometric view as an SVG string (same interactions as the top-down map). */
-export function renderIsoMap(m: DungeonMap, current: number | null, focus: number | null = null, tiles?: string): Raw {
+export function renderIsoMap(m0: DungeonMap, current: number | null, focus: number | null = null, tiles?: string, roomNumbers = false, turn = getMapTurn()): Raw {
   const T = tileSetById(tiles ?? getTileSetId());
   const P = `di${++uid}`;
-  const sc = mapScene(m, P);
+  // a turned camera draws a turned copy of the map (dmaprotate.ts); the dressing, the stairs and
+  // the notes mark are placed on the map as it is, then turned, so nothing moves when you turn
+  const q = normTurn(turn);
+  const m = q ? rotateMap(m0, q) : m0;
+  const sc = mapScene(m, P, roomNumbers);
+  if (q) for (const [id, items] of mapScene(m0, P, roomNumbers).dressing) sc.dressing.set(id, items.map((it) => rotateDecor(it, m0, q)));
+  const room0 = new Map(m0.rooms.map((r) => [r.id, r]));
+  const corner = (r: MapRoom, score: (x: number, y: number) => number): [number, number] => {
+    const [x, y] = cornerCell(room0.get(r.id) ?? r, score);
+    return rotateCell(x, y, m0.w, m0.h, q);
+  };
+  const sealed = sealedDungeonRooms(m);
   const { owner, key, edgeBetween, isFloor, roomById, exitById, entranceRoom, labels } = sc;
   const cells = [...owner.keys()].map((k) => k.split(",").map(Number) as [number, number]);
 
   // zoom to the explored part of the level (at least 8 squares across), not the whole board
-  let [gx0, gy0, gx1, gy1] = [0, 0, m.w, m.h];
-  if (cells.length) {
-    gx0 = Math.min(...cells.map((c) => c[0])) - 2; gx1 = Math.max(...cells.map((c) => c[0])) + 3;
-    gy0 = Math.min(...cells.map((c) => c[1])) - 2; gy1 = Math.max(...cells.map((c) => c[1])) + 3;
-    const grow = (a: number, b: number, max: number): [number, number] => {
-      const need = Math.max(0, 8 - (b - a));
-      let [lo, hi] = [a - Math.ceil(need / 2), b + Math.floor(need / 2)];
-      if (lo < 0) [lo, hi] = [0, hi - lo];
-      if (hi > max) [lo, hi] = [Math.max(0, lo - (hi - max)), max];
-      return [lo, hi];
-    };
-    [gx0, gx1] = grow(Math.max(0, gx0), Math.min(m.w, gx1), m.w);
-    [gy0, gy1] = grow(Math.max(0, gy0), Math.min(m.h, gy1), m.h);
-  }
+  const [gx0, gy0, gx1, gy1] = exploredBounds(m, cells);
   const minX = iso(gx0, gy1)[0] - 24, maxX = iso(gx1, gy0)[0] + 24, minY = iso(gx0, gy0)[1] - WALL_H - 30, maxY = iso(gx1, gy1)[1] + SLAB + 24;
   const parts: Raw[] = [];
   parts.push(html`<svg class="dmap dmap-iso" viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dungeon map (isometric)">
   <defs>
+    ${floorLightDef(T, P)}
     <linearGradient id="${P}-shN" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${T.wallShadow}" stop-opacity=".35"/><stop offset="1" stop-color="${T.wallShadow}" stop-opacity="0"/></linearGradient>
     <linearGradient id="${P}-shW" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${T.wallShadow}" stop-opacity=".3"/><stop offset="1" stop-color="${T.wallShadow}" stop-opacity="0"/></linearGradient>
     <filter id="${P}-glow"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <filter id="${P}-mist" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
-    ${m.rooms.map((r) => html`<clipPath id="${P}-clip-${r.id}"><rect x="${r.x * C}" y="${r.y * C}" width="${r.w * C}" height="${r.h * C}"/></clipPath>`)}
+    ${m.rooms.map((r) => html`<clipPath id="${P}-clip-${r.id}"><path d="${roomPath(r, C)}"/></clipPath>`)}
   </defs>
   <rect x="${minX}" y="${minY}" width="${maxX - minX}" height="${maxY - minY}" fill="${T.paper}" rx="8"/>
   <path d="M${pt(iso(0, 0))}L${pt(iso(m.w, 0))}L${pt(iso(m.w, m.h))}L${pt(iso(0, m.h))}Z" fill="${T.iso.void}"/>
@@ -95,7 +96,7 @@ export function renderIsoMap(m: DungeonMap, current: number | null, focus: numbe
     if (o.kind !== "room") parts.push(html`<path d="${diamond(x, y)}" fill="${o.kind === "entrance" ? T.floor.entrance : T.floor.corridor}"/>`);
   }
   for (const r of m.rooms)
-    parts.push(html`<path class="dmap-room" data-room="${r.id}" d="${diamond(r.x, r.y, r.w, r.h)}" fill="${T.floor[r.kind]}" ${r.draft ? html`opacity=".7"` : ""} style="cursor:pointer"/>`);
+    parts.push(html`<path class="dmap-room" ${sealed.has(r.id) ? "" : html`data-room="${r.id}" style="cursor:pointer"`} d="${r.cells ? roomCells(r).map(([x, y]) => diamond(x, y)).join("") : diamond(r.x, r.y, r.w, r.h)}" fill="${T.floor[r.kind]}" ${r.draft ? html`opacity=".7"` : ""}/>`);
 
   // 3. everything painted on the floor, drawn top-down through the floor matrix
   const flat: Raw[] = [floorTextureSvg(sc, T, P), footprintsSvg(m, sc, T)];
@@ -127,6 +128,8 @@ export function renderIsoMap(m: DungeonMap, current: number | null, focus: numbe
     }
     if (flatHere.length) flat.push(html`<g clip-path="url(#${P}-clip-${r.id})">${flatHere}</g>`);
   }
+  if (sealed.size) flat.push(sealedRoomsSvg(m.rooms, sealed));
+
   // unexplored ends, entrance arrow, stairs, current/focused room and draft outlines
   let dashed = "";
   for (const [x, y] of cells)
@@ -138,20 +141,26 @@ export function renderIsoMap(m: DungeonMap, current: number | null, focus: numbe
     }
   if (dashed) flat.push(html`<path d="${dashed}" stroke="${T.unexplored}" stroke-width="3" stroke-dasharray="5 4" stroke-linecap="round"/>`);
   if (m.entrance) {
-    const cx = (m.entrance.x + 0.5) * C, by = (m.entrance.y + 1) * C;
-    flat.push(html`<path d="M${cx - 7} ${by - 4} L${cx} ${by - 11} L${cx + 7} ${by - 4}" fill="none" stroke="#2f6b3a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`);
+    const [dx, dy] = entranceStep(m.entrance);
+    const ang = (Math.atan2(dx, -dy) * 180) / Math.PI; // the arrow points into the room
+    flat.push(html`<path d="M-7 9 L0 2 L7 9" transform="translate(${(m.entrance.x + 0.5) * C} ${(m.entrance.y + 0.5) * C}) rotate(${f1(ang)})" fill="none" stroke="#2f6b3a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`);
   }
-  if (m.stairs !== null) {
+  if (m.stairs !== null && !sealed.has(m.stairs)) {
     const r = roomById.get(m.stairs);
     if (r) {
-      const sx = (r.x + r.w - 1) * C + 3, sy = (r.y + r.h - 1) * C + 3, s = C - 6;
+      const [ax, ay] = corner(r, (x, y) => x + y);
+      const sx = ax * C + 3, sy = ay * C + 3, s = C - 6;
       flat.push(html`<rect x="${sx}" y="${sy}" width="${s}" height="${s}" fill="#1a1410" stroke="${T.ink}" stroke-width="1.2"/>${[0, 1, 2, 3].map((i) => html`<rect x="${sx + 1}" y="${sy + 1 + i * (s / 4)}" width="${s - 2}" height="${s / 5}" fill="${["#efe2c4", "#c9b48c", "#9e8a66", "#6f5f46"][i]}"/>`)}`);
     }
   }
   for (const r of m.rooms) {
-    if (r.id === current || r.id === focus)
-      flat.push(html`<rect x="${r.x * C + 5}" y="${r.y * C + 5}" width="${r.w * C - 10}" height="${r.h * C - 10}" rx="4" fill="none" stroke="${r.id === current ? "#d0582c" : "#2f7fd8"}" stroke-width="3" ${r.id === current ? "" : html`stroke-dasharray="6 4"`} opacity=".9"/>`);
-    if (r.draft) flat.push(html`<rect x="${r.x * C + 4}" y="${r.y * C + 4}" width="${r.w * C - 8}" height="${r.h * C - 8}" fill="none" stroke="${T.draft}" stroke-width="1.5" stroke-dasharray="5 4"/>`);
+    if (r.id === current || r.id === focus) {
+      if (r.cells) flat.push(html`<path d="${outlinePath(r, C)}" fill="none" stroke="${r.id === current ? "#d0582c" : "#2f7fd8"}" stroke-width="3" stroke-linecap="square" ${r.id === current ? "" : html`stroke-dasharray="6 4"`} opacity=".9"/>`);
+      else flat.push(html`<rect x="${r.x * C + 5}" y="${r.y * C + 5}" width="${r.w * C - 10}" height="${r.h * C - 10}" rx="4" fill="none" stroke="${r.id === current ? "#d0582c" : "#2f7fd8"}" stroke-width="3" ${r.id === current ? "" : html`stroke-dasharray="6 4"`} opacity=".9"/>`);
+    }
+    if (r.draft) flat.push(r.cells
+      ? html`<path d="${outlinePath(r, C)}" fill="none" stroke="${T.draft}" stroke-width="1.5" stroke-dasharray="5 4"/>`
+      : html`<rect x="${r.x * C + 4}" y="${r.y * C + 4}" width="${r.w * C - 8}" height="${r.h * C - 8}" fill="none" stroke="${T.draft}" stroke-width="1.5" stroke-dasharray="5 4"/>`);
   }
   parts.push(html`<g pointer-events="none" transform="${FLOOR_M}">${flat}</g>`);
 
@@ -217,18 +226,24 @@ export function renderIsoMap(m: DungeonMap, current: number | null, focus: numbe
   parts.push(html`<g pointer-events="none" transform="${FLOOR_M}">${lab}</g>`);
   for (const r of m.rooms)
     if (r.notes?.trim()) {
-      const [nx, ny] = iso(r.x + r.w - 0.5, r.y + 0.5, 20);
+      const [nc, nr] = corner(r, (x, y) => x - y);
+      const [nx, ny] = iso(nc + 0.5, nr + 0.5, 20);
       parts.push(html`<g pointer-events="none" transform="translate(${f1(nx)} ${f1(ny)})"><circle r="6.5" fill="#2f7fd8" stroke="#fff" stroke-width="1.5"/>${NOTE_PENCIL}</g>`);
     }
   const cur = current !== null ? roomById.get(current) : undefined;
   if (cur) {
     const roomCell = (r: MapRoom, nx: number, ny: number): [number, number] => [Math.min(Math.max(nx, r.x), r.x + r.w - 1), Math.min(Math.max(ny, r.y), r.y + r.h - 1)];
     const via = m.exits.find((e) => e.to === cur.id);
-    let [tx, ty] = [cur.x, cur.y + cur.h - 1];
+    let [tx, ty] = corner(cur, (x, y) => y * 2 - x);
     if (via) [tx, ty] = roomCell(cur, via.x + DIR[via.side][0], via.y + DIR[via.side][1]);
-    else if (m.entrance && entranceRoom?.id === cur.id) [tx, ty] = [m.entrance.x, m.entrance.y - 1];
+    else if (m.entrance && entranceRoom?.id === cur.id) [tx, ty] = insideEntrance(m.entrance);
     const [sx, sy] = iso(tx + 0.5, ty + 0.5);
     parts.push(html`<g pointer-events="none"><ellipse cx="${f1(sx)}" cy="${f1(sy)}" rx="7" ry="3.5" fill="#000" opacity=".3"/>${cyl(tx + 0.5, ty + 0.5, 0.16, 12, "#c0392b")}${sphere(tx + 0.5, ty + 0.5, 17, 4.5, "#e8d2b0")}</g>`);
+  }
+  for (const e of m.exits) {
+    if (!e.oneWay) continue;
+    const [dx, dy] = DIR[e.side];
+    parts.push(secretDoorMarker(...iso(e.x + 0.5 - dx * 0.32 + dy * 0.34, e.y + 0.5 - dy * 0.32 - dx * 0.34, 3), T));
   }
   for (const e of openExits(m)) {
     const sel = m.sel === e.id;

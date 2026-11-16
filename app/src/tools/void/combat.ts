@@ -9,6 +9,7 @@ import { makeCardsArrangeable } from "../../shell/arrangecards";
 import { bus } from "../../shell/events";
 import { rollAndLog } from "../../shell/panels/results";
 import { button, card, chip, eyebrow } from "../../ui/components";
+import { artThumb } from "../../ui/art";
 import { icon } from "../../ui/icon";
 import { playSfx } from "../../audio/sound";
 import { load, save } from "../common";
@@ -16,8 +17,9 @@ import { html, joinHtml, setHTML, type Raw } from "../../ui/html";
 import { plainText } from "../../shell/journalprose";
 import { voidBookLoaded } from "../../content";
 import { em, logNodes, span, strong, type LogNode } from "../combatlog";
+import { afterFight, noteFind, type AfterStep, type Done } from "../loot";
 import {
-  addRangedHit, addXp, applyDamage, bloody, damageArmour, endCombat, hasVChar, heal, levelChangeText, loadVChar, marksmanship, meleeManoeuvres,
+  addRangedHit, rangedBarText, addXp, applyDamage, bloody, damageArmour, endCombat, hasVChar, heal, levelChangeText, loadVChar, marksmanship, meleeManoeuvres,
   parseDamage, reload, saveVChar, setHp, shiftPoints, stun, useAmmo, useStim, vstats, type VoidCharacter,
 } from "./sheetmodel";
 import {
@@ -96,6 +98,9 @@ interface State {
   target: number | null;
   attack: { p: number; s: number } | null;
   foeTurn: number;
+  /** Ids of the aliens that have acted in the current alien turn (melee) or alien step (ranged). Who is next is
+   *  "the first one alive that hasn't acted", so an alien dying or running out of shots can't make another skip. */
+  acted: number[];
   killedRound1: boolean;
   momentumUsed: boolean;
   oilRounds: number; // Oil Bomb: no interrupts through this round
@@ -108,6 +113,10 @@ interface State {
   throwKind: ThrowKind;
   throwMod: number;
   xpBanked: boolean;
+  /** After a won fight: what each cache step gave (loot.ts afterFight keys). */
+  loot?: Record<string, Done>;
+  /** The player chose to stay on Combat once everything was collected. */
+  stayed?: boolean;
   log: (VLog | string)[]; // a `string` was saved as markup by an older version: shown as plain text
   pending: Pending[] | Pending | null;
 }
@@ -115,7 +124,7 @@ interface State {
 const COND0: Cond = { hull: false, reinforced: false, surprised: false, alienFirst: false, outnumbered: false, armourChecks: false, stealth: false };
 const fresh = (): State => ({
   phase: "setup", stage: "pre", foes: [], nextId: 1, cond: { ...COND0 }, rcase: 0, plan: [], step: 0, alienIdx: 0, closing: false, alienMod: 0, weapon: 0, setting: 0,
-  locked: [], turretDone: false, round: 1, fatigue: 1, target: null, attack: null, foeTurn: 0, killedRound1: false, momentumUsed: false, oilRounds: 0, youSkip: 0,
+  locked: [], turretDone: false, round: 1, fatigue: 1, target: null, attack: null, foeTurn: 0, acted: [], killedRound1: false, momentumUsed: false, oilRounds: 0, youSkip: 0,
   youShiftNext: null, firstHitDone: false, freeShot: false, thrown: false, pipe: "none", throwKind: "pipe", throwMod: 0, xpBanked: false, log: [], pending: null,
 });
 
@@ -125,9 +134,10 @@ const diceFaces = (a: number, b: number) =>
 const hpBar = (pct: number, foe = false) => html`<div class="hp-bar${foe ? " foe-bar" : ""}"><div style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>`;
 const rule = (text: string) => html`<p class="vc-rule">${icon("book-open", { size: 13 })}<span>${text}</span></p>`;
 
-async function rollD(d: Dice) {
+/** `tag` names whose roll it is, for the tutorial's scripted dice (dice/rig.ts); it changes nothing else. */
+async function rollD(d: Dice, tag?: string) {
   if (d.dice <= 0) return damageFromFaces(d, []);
-  const r = await rollDice(`${d.dice}D6`);
+  const r = await rollDice(`${d.dice}D6`, tag);
   return damageFromFaces(d, r.dice);
 }
 
@@ -163,6 +173,10 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       shiftPoints(c) + fatigueBonus(st.fatigue) + (st.killedRound1 && st.round === 2 && st.foes.length > 1 ? 2 : 0) + (st.youShiftNext && st.youShiftNext.round === st.round ? st.youShiftNext.n : 0)
     );
   }
+  /** The next alien to attack in close combat this turn, or undefined when all have. */
+  const nextMeleeFoe = () => meleeFoes().find((f) => !st.acted.includes(f.id));
+  /** The next armed alien to fire in this alien step, or undefined when all have. */
+  const nextShooter = () => armedFoes().find((f) => !st.acted.includes(f.id));
   function foeShift(f: Foe) {
     const living = meleeFoes();
     const i = living.findIndex((x) => x.id === f.id);
@@ -213,7 +227,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       f.skip ? `misses ${f.skip === 1 ? "next" : f.skip} round${f.skip > 1 ? "s" : ""}` : "",
     ].filter(Boolean);
     return html`<div class="foe ${dead ? "dead" : ""} ${targeted ? "targeted" : ""}" data-foe="${f.id}">
-      <div class="foe-head"><div class="foe-name"><strong>${f.name}</strong><span class="muted">${f.turret ? "Turret" : `L${f.level} ${TYPE_NAMES[f.type] ?? ""}`} · SH ${signed(f.sh)} · ${f.xp} XP${f.ranged ? ` · ${f.ranged.name} M${f.ranged.marks}` : ""}</span></div>
+      <div class="foe-head">${artThumb(f.name)}<div class="foe-name"><strong>${f.name}</strong><span class="muted">${f.turret ? "Turret" : `L${f.level} ${TYPE_NAMES[f.type] ?? ""}`} · SH ${signed(f.sh)} · ${f.xp} XP${f.ranged ? ` · ${f.ranged.name} M${f.ranged.marks}` : ""}</span></div>
         ${
           dead
             ? html`<span class="badge">${icon("skull", { size: 13 })} ${f.killedBy === "melee" ? "defeated" : f.killedBy === "ranged" ? "shot down" : "down"}</span>`
@@ -247,7 +261,17 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       html`<label class="vc-check"><input type="checkbox" data-cond="${k}" ${st.cond[k] ? "checked" : ""}><span>${label}${hint ? html` <span class="muted">${hint}</span>` : ""}</span></label>`;
     const pend = pendingList();
     return html`${!c ? card(html`<p>Create your survivor on the <a href="#/play/vsheet">Character sheet</a> first: Combat uses its HP, manoeuvres, armour, guns and stims.</p>`, { eyebrow: "No survivor", title: "Who's fighting?", tone: "danger" }) : ""}
-      ${pend.length ? card(html`<p>From the Hulk turn: <strong>${pend.map((p) => p.name).join(", ")}</strong>.</p><div class="step-actions">${button("Add to the fight", { icon: "plus", variant: "primary", attrs: html`data-act="take-pending"` })}${button("Dismiss", { variant: "ghost", attrs: html`data-act="drop-pending"` })}</div>`, { eyebrow: "Encounter", title: "A fight is waiting", tone: "accent" }) : ""}
+      ${pend.length ? card(html`<p>From Start Game: <strong>${pend.map((p) => p.name).join(", ")}</strong>.</p><div class="step-actions">${button("Add to the fight", { icon: "plus", variant: "primary", attrs: html`data-act="take-pending"` })}${button("Dismiss", { variant: "ghost", attrs: html`data-act="drop-pending"` })}</div>`, { eyebrow: "Encounter", title: "A fight is waiting", tone: "accent" }) : ""}
+      ${
+        st.foes.length
+          ? card(
+              html`<div class="foes">${st.foes.map(foeCard)}</div>
+        <div class="step-actions">${button("Start the fight", { icon: "swords", size: "lg", variant: "primary", attrs: html`data-act="start"${c ? "" : " disabled"}` })}</div>
+        <p class="muted step-note">Patrol SPECIAL or room text: set each alien's HP and Shift above. Stims used now are free; in close combat a stim takes your attack.</p>`,
+              { eyebrow: `Aliens (${st.foes.length})`, title: "Ready to fight" },
+            )
+          : ""
+      }
       ${card(
         html`<label class="cb-search-wrap">${icon("search", { size: 17 })}<input id="cb-search" class="cb-search" placeholder="Search alien cards (name, or L3 for level 3)" value="${query}"></label>
       <div class="cb-list">${
@@ -270,17 +294,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         </div>
         ${rule("U25 reading: surprised = no ranged phase and the alien makes the first melee attack. \"Attacks first\" = it makes the first melee attack; shooting happens as normal.")}`,
         { eyebrow: "Conditions", title: "The room" },
-      )}
-      ${
-        st.foes.length
-          ? card(
-              html`<div class="foes">${st.foes.map(foeCard)}</div>
-        <div class="step-actions">${button("Start the fight", { icon: "swords", size: "lg", variant: "primary", attrs: html`data-act="start"${c ? "" : " disabled"}` })}</div>
-        <p class="muted step-note">Patrol SPECIAL or room text: set each alien's HP and Shift above. Stims used now are free; in close combat a stim takes your attack.</p>`,
-              { eyebrow: `Aliens (${st.foes.length})`, title: "Ready to fight" },
-            )
-          : ""
-      }`;
+      )}`;
   }
 
   function weaponPicker(c: VoidCharacter) {
@@ -347,8 +361,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         { eyebrow: `Ranged phase · your shot`, title: `Case ${st.rcase}${st.closing ? " · closing in" : ""}`, tone: "accent" },
       );
     }
-    const shooters = armedFoes();
-    const s = shooters[st.alienIdx] ?? shooters[0];
+    const s = nextShooter() ?? armedFoes()[0];
     return card(
       html`<p class="vc-small">${caseNote}</p>
       ${s ? html`<p class="vc-small"><strong>${s.name}</strong>: ${s.ranged!.name}, Marksmanship ${s.ranged!.marks}${st.alienMod ? ` (roll ${signed(st.alienMod)})` : ""}, damage ${diceText(s.ranged!.dmg)}.</p>` : ""}
@@ -369,6 +382,8 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         body: html`<div class="rc-title">${icon("zap", { size: 20 })} [6][6] Prime Attack!</div>
         <div class="rc-text">Pick any manoeuvre as performed exactly. Your total Shift (${pts}) is added and interrupts can't reduce it.</div>
         <div class="man-grid">${mans.map((m, i) => chip(m.name, { icon: "zap", value: `${diceText(m.damage)} +${pts}`, attrs: html`data-hit="${i}" data-prime="1"` }))}</div>
+        ${mans.length ? "" : html`<div class="rc-text">Your sheet has no manoeuvres, so there is nothing to perform. Add them on the Character sheet.</div>
+        <div class="rc-actions">${button("Continue", { size: "lg", attrs: html`data-act="miss"` })}</div>`}
         ${rule("U37 reading: Shift is added once (no Exact Strike bonus on top).")}`,
       };
     const ms = mans.map((m) => ({ ...m, p: m.primary, s: m.secondary }));
@@ -410,7 +425,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         { eyebrow: `Round ${st.round} · Your turn`, title: st.momentumUsed && st.round === 2 ? "Momentum: your free attack" : "Your attack", tone: "accent" },
       );
     }
-    const f = living[st.foeTurn];
+    const f = nextMeleeFoe();
     return f
       ? card(
           html`${last}<p class="vc-small">Shift ${foeShift(f)} · it shifts to its strongest manoeuvre in reach.</p><div class="step-actions">${button(`Roll for ${f.name} (D66)`, { icon: "dice", size: "lg", variant: "primary", attrs: html`data-act="foe-attack"` })}</div>
@@ -420,32 +435,53 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       : "";
   }
 
+  /** What is left to do after this won fight (loot.ts): the XP, then each alien's cache. `insight`: the stim that shifts cache rolls. */
+  const afterSteps = (insight: boolean) =>
+    afterFight(
+      st.foes.map((f) => ({ id: f.id, name: f.name, treasure: f.cache ?? "" })),
+      (text) => followOns(text).map((o) => ({ code: o.ref.table.code ?? o.ref.key, modifier: o.modifier + (insight ? insightMod(o.ref.table.dice) : 0) })),
+      st.xpBanked || fightXp(st.foes) <= 0,
+      st.loot ?? {},
+    );
+
   function wonView(c: VoidCharacter | null) {
     const xp = fightXp(st.foes);
     const ins = c ? stimCombat(c.effects, vstats(c).level).insight : false;
     const anyRanged = st.foes.some((f) => f.killedBy === "ranged" || f.killedBy === "throw");
+    const steps = afterSteps(ins);
+    const next = steps.find((s) => !s.done);
+    const lead = (s: AfterStep) => (s === next ? ("primary" as const) : undefined);
+    const stepHtml = (s: AfterStep, i: number): Raw => {
+      const foe = st.foes.find((f) => s.key.startsWith(`${f.id}:`));
+      const head = s.kind === "xp" ? "Experience" : `${s.foe} cache`;
+      const what = s.kind === "xp" ? html`${xp > 0 ? `${xp} XP for the fight.` : "No XP: aliens killed only by shots or throws give none."}` : s.kind === "table" && foe ? ctx.inline(foe.cache) : html`Also on it: ${s.text ?? ""}.`;
+      const act = s.done
+        ? ""
+        : s.kind === "xp"
+          ? button(`Add ${xp} XP to your sheet`, { icon: "plus", size: "lg", variant: lead(s), attrs: html`data-act="bank-xp"` })
+          : button(s.label, { icon: s.kind === "item" ? "plus" : "dice", size: "lg", variant: lead(s), attrs: html`data-loot="${s.key}"` });
+      const res = s.kind === "xp"
+        ? s.done && xp > 0 ? html`<p class="ok">XP added.</p>` : ""
+        : s.result
+          ? html`${s.result.text ? html`<div class="rc-text">${ctx.inline(s.result.text)}</div>` : ""}
+            <p class="ok">${s.result.added.length ? `On your sheet: ${s.result.added.join(" · ")}.` : "Nothing to add."}</p>`
+          : "";
+      return html`<li class="after-step" data-state="${s.done ? "done" : s === next ? "current" : "upcoming"}">
+        <span class="step-marker" aria-hidden="true">${s.done ? icon("check", { size: 15 }) : i + 1}</span>
+        <div>${eyebrow(head)}<div class="rc-text">${what}</div>${res}${act ? html`<div class="step-actions">${act}</div>` : ""}</div></li>`;
+    };
+    const waiting = pendingList().length;
     return card(
-      html`<div class="step-actions">${
-        xp > 0
-          ? button(st.xpBanked ? "XP added" : `Add ${xp} XP to your sheet`, { icon: st.xpBanked ? "check" : "plus", size: "lg", variant: st.xpBanked ? undefined : "primary", attrs: html`data-act="bank-xp"${st.xpBanked ? " disabled" : ""}` })
-          : html`<p class="muted">No XP: aliens killed only by shots or throws give none.</p>`
-      }</div>
+      html`<p class="after-lead">${next ? html`<strong>Next:</strong> ${next.kind === "xp" ? "add your XP" : next.kind === "item" ? `take what else the ${next.foe} had` : `search the ${next.foe}`}.` : "Everything from this fight is on your sheet."}</p>
+      <ol class="after-steps">${steps.map(stepHtml)}</ol>
       ${anyRanged ? rule("Ranged kills give no XP; a shot then a close-combat kill gives full XP. Thrown-weapon kills are counted as ranged.") : ""}
-      ${st.foes
-        .filter((f) => f.cache && !/^none$/i.test(f.cache))
-        .map(
-          (f) => html`<article class="result-card step-result"><header class="rc-head">${eyebrow(`${f.name} cache`)}</header><div class="rc-text">${ctx.inline(f.cache)}</div>
-          <div class="rc-actions">${followOns(f.cache)
-            .map((o) => {
-              const mod = o.modifier + (ins ? insightMod(o.ref.table.dice) : 0);
-              return button(`Roll ${o.ref.table.code ?? o.label}${mod ? ` ${signed(mod)}` : ""}`, { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-loot="${o.ref.key}|${mod}"` });
-            })
-            }</div></article>`,
-        )
-        }
       ${st.pipe === "recover" ? html`<div class="step-actions">${button("Recover the metal pipe (D6: 4–6)", { icon: "dice", attrs: html`data-act="pipe"` })}</div>` : ""}
-      <p class="muted step-note">Now resolve the rest of the room, and note the alien on the map.</p>`,
-      { eyebrow: st.stage === "melee" ? `Round ${st.round} · All aliens down` : "All aliens down", title: "Victory!", titleIcon: "trophy", tone: "accent" },
+      ${next ? "" : html`<div class="step-actions after-choice">
+        ${button(waiting ? "Back to the Hulk" : "Continue playing", { icon: "compass", size: "lg", variant: st.stayed || waiting ? undefined : "primary", attrs: html`data-act="after-continue"` })}
+        ${st.stayed ? "" : button("Stay on Combat", { size: "lg", attrs: html`data-act="after-stay"` })}</div>
+        ${waiting ? html`<p class="muted step-note">More aliens are waiting for this fight to end: press New fight to face them.</p>` : ""}`}
+      <p class="muted step-note">${next ? "Then resolve the rest of the room, and note the alien on the map." : "Now resolve the rest of the room, and note the alien on the map."} A cache is written under small items as the book words it: move ammo, stims or credits to their own places on your sheet.</p>`,
+      { eyebrow: st.stage === "melee" ? `Round ${st.round} · All aliens down` : "All aliens down", title: "Victory!", titleIcon: "trophy", tone: "accent", attrs: html`data-after-fight` },
     );
   }
 
@@ -472,7 +508,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     const sorted = f0 ? [...f0.man].sort((x, y) => diceAvg(x.dmg) - diceAvg(y.dmg)) : [];
     const foeSide = f0
       ? card(
-          html`<dl class="stat-block">
+          html`${artThumb(f0.name, "art-face")}<dl class="stat-block">
             <div><dt>HP</dt><dd>${f0.hpNow} / ${f0.hpMax}</dd></div>
             <div><dt>Shift</dt><dd>${f0.turret ? "—" : foeShift(f0)}</dd></div>
             <div><dt>Damage</dt><dd>${sorted.length ? (sorted.length > 1 ? `${diceText(sorted[0].dmg)} – ${diceText(sorted[sorted.length - 1].dmg)}` : diceText(sorted[0].dmg)) : "—"}</dd></div>
@@ -506,12 +542,22 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       <div class="combat-face">${foeSide}<div class="vs" aria-hidden="true">${icon(st.stage === "melee" ? "swords" : "crosshair", { size: 20 })}</div>${youSide}</div>
       ${action}
       ${card(html`<div class="foes">${st.foes.map(foeCard)}</div>`, { eyebrow: `${alive().length} of ${st.foes.length} standing`, title: "Aliens" })}
-      ${card(html`<ol class="combat-log">${st.log.map((l) => html`<li>${logEntry(l)}</li>`)}</ol>`, { eyebrow: `${st.log.length} event${st.log.length === 1 ? "" : "s"}`, title: "Combat log" })}`;
+      <div class="step-actions">${button(`Combat log (${st.log.length})`, { icon: "panel-right", size: "sm", variant: "ghost", attrs: html`data-act="show-log" title="The whole fight, in the side panel"` })}</div>`;
   }
 
+  let drawnPhase: string | null = null; // the phase of the last draw, so the trophy pops once, as the fight is won
   function draw() {
+    const justWon = st.phase === "won" && drawnPhase !== null && drawnPhase !== "won";
+    root.classList.toggle("just-won", justWon);
+    drawnPhase = st.phase;
+    // the fight is over: bring what is next into view (after this draw has put it on the page)
+    if (justWon) queueMicrotask(() => {
+      const el = root.querySelector<HTMLElement>("[data-after-fight]");
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      el?.querySelector<HTMLElement>(".btn-primary")?.focus({ preventScroll: true });
+    });
     setHTML(root, html`<header class="play-head">
-        <div class="play-title">${eyebrow(st.phase === "setup" ? "Play · Setup" : "Play")}<h1>${icon("crosshair", { size: 26 })}<span>Combat</span></h1></div>
+        <div class="play-title">${st.phase === "setup" ? eyebrow("Setup") : ""}<h1>${icon("crosshair", { size: 26 })}<span>Combat</span></h1></div>
         <div class="play-actions">${st.phase !== "setup" ? button(st.phase === "won" || st.phase === "lost" ? "New fight" : "End fight", { icon: st.phase === "won" || st.phase === "lost" ? "rotate-ccw" : "x", attrs: html`data-act="end"` }) : ""}
         <a class="btn btn-ghost" href="#/s/void%2Fcombat">${icon("book", { size: 17 })}<span>Combat rules</span></a></div></header>
       ${st.phase === "setup" ? setupView() : fightView()}`);
@@ -559,7 +605,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       f.earlyRounds = sp.earlyRounds;
       if (sp.skip) f.skip = 1;
       if (sp.first) st.cond.alienFirst = true;
-      if (p.from === "vhulk") log(em(`From the Hulk turn${p.level ? `, level ${p.level}` : ""}${p.room ? ` room ${p.room}` : ""}: ${a.name}.`));
+      if (p.from === "vhulk") log(em(`From Start Game${p.level ? `, level ${p.level}` : ""}${p.room ? ` room ${p.room}` : ""}: ${a.name}.`));
       if (p.special) {
         const what = sp.applied.length ? `applied: ${sp.applied.join(", ")}` : sp.manual ? "apply it by hand" : sp.roll ? "no effect" : "apply it by hand";
         log(em(`Patrol SPECIAL: ${p.special}${rolled} (${what}).`));
@@ -624,6 +670,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     st.plan = firingPlan(st.rcase, st.cond.stealth && youCanFire(c));
     st.step = 0;
     st.alienIdx = 0;
+    st.acted = [];
     st.closing = false;
     st.alienMod = st.rcase === 4 ? -1 : 0;
     st.stage = "ranged";
@@ -648,8 +695,11 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     if (checkWon()) return;
     st.step++;
     st.alienIdx = 0;
+    st.acted = [];
     if (st.step >= st.plan.length) {
-      const again = (st.rcase === 3 && !st.closing) || turretFight();
+      // Stealth Shield's plan is your two shots and no return fire: it never repeats as a shootout
+      const stealthPlan = !st.plan.includes("alien");
+      const again = (st.rcase === 3 && !st.closing && !stealthPlan) || turretFight();
       if (again && (youCanFire(char()) || turretFight())) {
         if (turretFight() && !youCanFire(char())) st.plan = ["alien"];
         st.step = 0;
@@ -667,6 +717,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     st.fatigue = 1;
     st.attack = null;
     st.foeTurn = 0;
+    st.acted = [];
     if (!meleeFoes().some((f) => f.id === st.target)) st.target = meleeFoes()[0]?.id ?? null;
     const alienFirst = st.cond.surprised || st.cond.alienFirst;
     st.phase = alienFirst ? "foes" : "you";
@@ -687,10 +738,12 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     if (alienFirstRound()) return endRound();
     st.phase = "foes";
     st.foeTurn = 0;
+    st.acted = [];
   }
-  function afterFoe() {
+  function afterFoe(f: Foe) {
+    st.acted.push(f.id);
     st.foeTurn++;
-    if (st.foeTurn < meleeFoes().length) return;
+    if (nextMeleeFoe()) return;
     if (alienFirstRound()) {
       st.phase = "you";
       return;
@@ -702,7 +755,23 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     st.fatigue = Math.min(6, st.fatigue + 1);
     st.phase = "you";
     st.foeTurn = 0;
+    st.acted = [];
     log(em(`Round ${st.round} begins. Fatigue die ${st.fatigue}.`));
+  }
+
+  /** Add the won fight's XP to the sheet, once. */
+  function bankXp() {
+    const c = char();
+    if (!c || st.xpBanked || st.phase !== "won") return;
+    const xp = fightXp(st.foes);
+    st.xpBanked = true;
+    if (xp <= 0) return;
+    const ch = addXp(c, xp);
+    saveC(c);
+    const lvl = levelChangeText(c, ch);
+    if (ch.to > ch.from) playSfx("level-up");
+    ctx.toast(`+${xp} XP added to your sheet.${lvl ? ` ${lvl}` : ""}`);
+    bus.emit("journal:fight", { phase: "xp", xp });
   }
 
   function endFight(how: "reset" | "retreat") {
@@ -807,7 +876,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     const need = set.burst ? burstAmmo(w.capacity) : 1;
     const sp = weaponSpecial(w.special);
     let rollMod = (st.rcase === 1 && !free ? -1 : 0) + (f.restrained ? -2 : 0) + stimShotMod(c.effects);
-    const r = await rollDice("2D6");
+    const r = await rollDice("2D6", "you:shot");
     playSfx("shot");
     const line: LogNode[] = [`You fire the ${w.name}${set.burst ? " (Burst)" : ""} at ${f.name}: ${r.dice.join(" + ")}`];
     let bonus: Dice = { dice: 0, sides: 6, mod: 0 };
@@ -866,7 +935,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       if (f.type === "R") raw = f.hpNow;
       dmgLine = f.type === "R" ? "it destroys the robot" : "no effect on a non-robot";
     } else {
-      const base = await rollD(parseDamage(w.damage));
+      const base = await rollD(parseDamage(w.damage), "you:shot-damage");
       raw = base.total;
       six = base.six;
       dmgLine = base.text;
@@ -895,7 +964,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     }
     st.firstHitDone = true;
     // the Deflection Roll against its red-boxed interrupts
-    const d = await rollDice("D66");
+    const d = await rollDice("D66", "you:shot-deflect");
     const defl = sp.robotKiller ? null : alienDeflect(f, d.dice[0], d.dice[1]);
     const dmg = sp.robotKiller ? raw : finalDamage(raw, defl?.reduce ?? 0, six);
     damageFoe(f, dmg, "ranged");
@@ -921,7 +990,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       const rh = addRangedHit(c);
       if (rh.filled) {
         const lvl = levelChangeText(c, rh.level);
-        ctx.toast(`Ranged Hits bar full: +1 Marksmanship and ${rh.xp} XP.${lvl ? ` ${lvl}` : ""}`);
+        ctx.toast(`${rangedBarText(c, rh)}${lvl ? ` ${lvl}` : ""}`);
         if (rh.level.to > rh.level.from) playSfx("level-up");
       }
     }
@@ -939,7 +1008,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       return;
     }
     f.shotsUsed++;
-    const r = await rollDice("2D6");
+    const r = await rollDice("2D6", "foe:shot");
     playSfx("shot");
     const total = r.value + st.alienMod;
     const head = `${f.name} fires its ${f.ranged.name}: ${r.dice.join(" + ")}${st.alienMod ? ` ${signed(st.alienMod)}` : ""} = ${total} vs ${f.ranged.marks}`;
@@ -1004,7 +1073,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     if (!m || !f || !a) return;
     const exact = !prime && m.primary === a.p && m.secondary === a.s;
     const pts = youShift(c);
-    const r = await rollD(m.damage);
+    const r = await rollD(m.damage, "you:damage");
     const stims = stimCombat(c.effects, vstats(c).level);
     let raw = r.total + (exact || prime ? pts : 0);
     let text = `${m.name}: ${r.text}${exact || prime ? ` + Shift ${pts}` : ""}`;
@@ -1025,20 +1094,21 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     ];
     if (intr?.special && f.hpNow > 0) line.push(...(await special(intr.special, f, c)));
     log(...line);
+    if (st.phase === "lost") return; // the interrupt's special took your last HP
     afterYou();
   }
 
   // ---------- an alien's melee attack ----------
   async function foeAttack() {
-    const f = meleeFoes()[st.foeTurn];
+    const f = nextMeleeFoe();
     const c = char();
     if (!f || !c) return;
     if (f.skip > 0) {
       f.skip--;
       log(`${f.name} misses this round.`);
-      return afterFoe();
+      return afterFoe(f);
     }
-    const r = await rollDice("D66");
+    const r = await rollDice("D66", "foe:attack");
     const [p, s] = r.dice;
     if (p === 1 && s === 1) {
       playSfx("fumble");
@@ -1046,7 +1116,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       log(`${f.name} rolls [1][1], a `, strong(["Mishap"], "tone-miss"), ": ", { book: f.mishap }, ...e, followOns(f.mishap).length ? " (roll the table from the card)" : "");
       if (st.phase === "lost") return;
       if (checkWon()) return;
-      return afterFoe();
+      return afterFoe(f);
     }
     if (p === 6 && s === 6) {
       playSfx("hit-crit");
@@ -1054,14 +1124,14 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       log(`${f.name} rolls [6][6], a `, strong([{ icon: "zap" }, " Prime Attack"], "tone-prime"), ": ", { book: f.prime }, ...e);
       if (st.phase === "lost") return;
       if (checkWon()) return;
-      return afterFoe();
+      return afterFoe(f);
     }
     const pts = foeShift(f);
     const pick = alienChoice(p, s, f.man, pts);
     if (!pick) {
       playSfx("miss");
       log(`${f.name} rolls ${D66(p, s)} and can't reach a manoeuvre with ${pts} Shift: `, strong(["miss"], "tone-miss"), ".");
-      return afterFoe();
+      return afterFoe(f);
     }
     const m = pick.m;
     const d = await rollD(m.dmg);
@@ -1083,7 +1153,8 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     else if (m.special) line.push(" ", em(m.special));
     log(...line);
     if (st.phase === "lost") return;
-    afterFoe();
+    if (checkWon()) return; // its own special can finish it (a manoeuvre that also damages the alien)
+    afterFoe(f);
   }
 
   // ---------- events ----------
@@ -1166,11 +1237,14 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         if (t) await alienShoot(t);
         if ((st.phase as Phase) !== "lost") endFight("retreat");
       } else if (act === "alien-shoot") {
-        const s = armedFoes()[st.alienIdx] ?? armedFoes()[0];
-        if (s) await alienShoot(s);
+        const s = nextShooter() ?? armedFoes()[0];
+        if (s) {
+          await alienShoot(s);
+          st.acted.push(s.id);
+        }
         if (st.phase !== "lost") {
           st.alienIdx++;
-          if (st.alienIdx >= armedFoes().length || !armedFoes().length) nextRangedStep();
+          if (!nextShooter()) nextRangedStep();
         }
       } else if (act === "alien-skip") nextRangedStep();
       else if (act === "free-shot") {
@@ -1178,7 +1252,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         await shoot(true);
         checkWon();
       } else if (act === "attack") {
-        const r = await rollDice("D66");
+        const r = await rollDice("D66", "you:attack");
         st.attack = { p: r.dice[0], s: r.dice[1] };
         log(`You roll ${D66(r.dice[0], r.dice[1])}.`);
       } else if (b.dataset.hit) await yourHit(+b.dataset.hit, b.dataset.prime === "1");
@@ -1222,30 +1296,35 @@ export function render(root: HTMLElement, ctx: ToolContext) {
           saveC(c);
           if (c.hp <= 0 && st.phase !== "won" && st.phase !== "setup") st.phase = "lost";
         }
-      } else if (act === "bank-xp") {
-        const c = char();
-        if (c && !st.xpBanked) {
-          const xp = fightXp(st.foes);
-          const ch = addXp(c, xp);
-          saveC(c);
-          st.xpBanked = true;
-          const lvl = levelChangeText(c, ch);
-          if (ch.to > ch.from) playSfx("level-up");
-          ctx.toast(`+${xp} XP added to your sheet.${lvl ? ` ${lvl}` : ""}`);
-          bus.emit("journal:fight", { phase: "xp", xp });
-        }
-      } else if (act === "pipe") {
+      } else if (act === "bank-xp") bankXp();
+      else if (act === "pipe") {
         const r = await rollDice("D6");
         st.pipe = "done";
         log(`Metal pipe D6 ${r.value}: ${r.value >= 4 ? "recovered" : "lost"}.`);
       } else if (b.dataset.loot) {
-        const [code, mod] = b.dataset.loot.split("|");
-        const ref = tableByCode(code);
-        if (ref && isTableRef(ref)) {
-          const r = await rollAndLog(ref, +mod || 0, undefined, "Cache");
-          if (st.phase === "won" && r.rowIndex >= 0) bus.emit("journal:fight", { phase: "loot", text: r.cells[1] || `${ref.title} ${r.value}` });
-        } else ctx.toast(`Couldn't find table ${code}.`);
-      } else if (act === "end") {
+        const c = char();
+        const step = afterSteps(c ? stimCombat(c.effects, vstats(c).level).insight : false).find((s) => s.key === b.dataset.loot && !s.done);
+        if (!step) return;
+        let text = step.text ?? "";
+        if (step.kind === "table") {
+          const ref = tableByCode(step.code!);
+          if (!ref || !isTableRef(ref)) return ctx.toast(`Couldn't find table ${step.code}.`);
+          const r = await rollAndLog(ref, step.modifier ?? 0, undefined, "Cache");
+          text = r.rowIndex >= 0 ? r.cells.slice(1).filter(Boolean).join(" ") : "";
+          if (r.rowIndex >= 0) bus.emit("journal:fight", { phase: "loot", text: r.cells[1] || `${ref.title} ${r.value}` });
+        }
+        // write what it gives on the sheet (no sheet yet: the result stays on the card and in Results)
+        const added = c ? noteFind(c, text) : [];
+        if (c && added.length) saveC(c);
+        (st.loot ??= {})[step.key] = { text: step.kind === "table" ? text : "", added: c ? added : ["no survivor sheet yet: note it yourself"] };
+        ctx.toast(added.length ? "Added to your sheet, under small items." : c ? "Nothing to add to your sheet." : "Make a survivor to keep what you find.");
+      } else if (act === "after-stay") st.stayed = true;
+      else if (act === "after-continue") {
+        persist();
+        ctx.openTab("#/play/vhulk");
+        return;
+      } else if (act === "show-log") ctx.showPanel("combat");
+      else if (act === "end") {
         if (st.phase !== "won" && st.phase !== "lost" && !confirm("End this fight?")) return;
         endFight("reset");
       }
@@ -1271,6 +1350,8 @@ export function render(root: HTMLElement, ctx: ToolContext) {
   async function readPending() {
     if (st.phase !== "setup" && st.phase !== "won" && st.phase !== "lost") return draw();
     if (!pendingList().length) return draw();
+    // the next encounter replaces a finished fight: its XP goes to the sheet first, not away with the reset
+    if (st.phase === "won") bankXp();
     if (st.phase !== "setup") endFight("reset"), (st.pending = load<Partial<State>>(KEY, {}).pending ?? null);
     await takePending();
     persist();

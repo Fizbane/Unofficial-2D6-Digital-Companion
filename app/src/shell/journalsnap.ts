@@ -5,7 +5,7 @@ import { renderMap, type DungeonMap, type ExitType, type RoomKind, type Side } f
 import { html, type Raw } from "../ui/html";
 
 export interface SnapRoom { id: number; n: number; x: number; y: number; w: number; h: number; kind: RoomKind; label: string; draft?: true }
-export interface SnapExit { room: number; side: Side; x: number; y: number; type: ExitType; locked?: true; to?: number; blocked?: true }
+export interface SnapExit { room: number; side: Side; x: number; y: number; type: ExitType; locked?: true; to?: number; blocked?: true; oneWay?: true }
 export interface MapSnap {
   w: number; // the full map's size, in squares
   h: number;
@@ -57,6 +57,7 @@ export function sliceMap(m: DungeonMap, roomId: number): MapSnap | null {
       ...(e.locked ? { locked: true as const } : {}),
       ...(e.to !== undefined ? { to: e.to } : {}),
       ...(e.blocked ? { blocked: true as const } : {}),
+      ...(e.oneWay ? { oneWay: true as const } : {}),
     }));
   const snap: MapSnap = { w: m.w, h: m.h, box: [bx, by, bw, bh], focus: r.id, rooms, exits };
   if (m.entrance && m.entrance.x >= bx && m.entrance.x < bx + bw && m.entrance.y >= by && m.entrance.y < by + bh) snap.entrance = [m.entrance.x, m.entrance.y];
@@ -72,7 +73,7 @@ export function snapToMap(s: MapSnap): DungeonMap {
     w: n(s.w),
     h: n(s.h),
     rooms: s.rooms.map((r) => ({ id: n(r.id), n: n(r.n), x: n(r.x), y: n(r.y), w: n(r.w), h: n(r.h), kind: r.kind, label: String(r.label), sub: "", ...(r.draft ? { draft: true } : {}) })),
-    exits: s.exits.map((e) => ({ id: id++, room: n(e.room), side: e.side, x: n(e.x), y: n(e.y), type: e.type, locked: e.locked, to: e.to === undefined ? undefined : n(e.to), blocked: e.blocked })),
+    exits: s.exits.map((e) => ({ id: id++, room: n(e.room), side: e.side, x: n(e.x), y: n(e.y), type: e.type, locked: e.locked, to: e.to === undefined ? undefined : n(e.to), blocked: e.blocked, oneWay: e.oneWay === true })),
     sel: null,
     stairs: s.stairs === undefined ? null : n(s.stairs),
     nextId: id,
@@ -89,7 +90,7 @@ export function renderSnap(s: MapSnap, idSuffix: string): Raw {
 
 export interface RoomExits { entry: Side | null; via?: ExitType | "entrance"; exits: { side: Side; type: ExitType; locked?: true }[] }
 
-/** How room `roomId` was entered (wall and doorway) and its exits, other than the one you came in by. */
+/** How room `roomId` was entered (wall and doorway) and its exits, apart from the way in. */
 export function roomExits(m: DungeonMap, roomId: number): RoomExits {
   const r = m.rooms.find((x) => x.id === roomId);
   const came = m.exits.find((e) => e.to === roomId);

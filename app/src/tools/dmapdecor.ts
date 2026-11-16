@@ -4,6 +4,7 @@
 // is locked), and the themes match single generic words: no room name from a locked page is kept here.
 // Everything is seeded by the room id so a room always looks the same between redraws.
 import type { MapRoom } from "./dmap";
+import { inRoom } from "./dmapshape";
 import { html, type Raw } from "../ui/html";
 import { byGame } from "../games";
 
@@ -285,10 +286,10 @@ const THEMES: Theme[] = [
   { re: /TOMB|CRYPT|MAUSOLEUM|SARCOPH|COFFIN|GRAVE|COLUMBARIUM|OSSUARY|CHARNEL|MORGUE|NECROPSY|HEADSTONE|RESTING|UNDERCROFT/, wall: ["urnniche", "candles"], wallP: 0.45, centre: ["sarcophagus"], scatter: ["bones", "skull", "urn", "coffin", "headstone"], scatterP: 0.14 },
   { re: /URN/, centre: ["idol"], scatter: ["urn", "urn", "urn", "rubble"], scatterP: 0.25 },
   { re: /SKULL|BONE|SKELETON|CORPSE|CARCASS|BODIES|CRUSHED|WARRIOR|DEAD|TEETH|MASS/, scatter: ["bones", "skull", "skeleton", "bones", "blood"], scatterP: 0.22 },
-  { re: /CHURCH|PEW|CHAPEL|CEREMONIAL|CLOISTER|CHANTRY/, wall: ["candles", "banner"], wallP: 0.35, centre: ["pews", "altar"], scatter: ["candle"], scatterP: 0.05, overlay: "rug" },
+  { re: /CHURCH|PEW|CHAPEL|CEREMONIAL|CLOISTER|CHANTRY/, wall: ["candles", "banner"], wallP: 0.35, centre: ["pews", "altar"], scatter: ["candle", "candle", "urn"], scatterP: 0.12, overlay: "rug" },
   { re: /SHRINE|TEMPLE|PRAYER|ALTAR|SANCT|WORSHIP|HOLY|VESTRY|D[EI]VINE|RITE|OATH|PLINTH|OFFERING|GOD|RELIGIOUS|SYMBOL|EXPIATORY|SACRED|ENCLAVE|HEX|DOOM|PRACTICE/, wall: ["candles", "banner", "mural"], wallP: 0.35, centre: ["altar"], scatter: ["candle", "candle", "urn"], scatterP: 0.08 },
   { re: /IDOL|EFFIGY|STATUE|MONUMENT|SCULPT|GARGOYLE|MASK|CONSTRUCT|DOLL|PUPPET|CARVING/, wall: ["mural"], wallP: 0.2, centre: ["statue", "idol"], scatter: ["rubble", "candle"], scatterP: 0.06 },
-  { re: /MURAL|MOSAIC|TAPESTRY|PAINTING|GLYPH|TILED|BANNER|LEATHER/, wall: ["mural", "banner"], wallP: 0.5, overlay: "mosaic", scatter: ["rubble"], scatterP: 0.04 },
+  { re: /MURAL|MOSAIC|TAPESTRY|PAINTING|GLYPH|TILED|BANNER|LEATHER/, wall: ["mural", "banner"], wallP: 0.5, overlay: "mosaic", scatter: ["rubble", "candle", "urn", "candle"], scatterP: 0.08 },
   { re: /BARRACKS|DORM|SLEEPING|BEDROOM|REST|LOUNGE|SHELTER|HARBORAGE|HUDDLE|FUR/, wall: ["bed"], wallP: 0.6, scatter: ["chest", "sack", "stool"], scatterP: 0.07 },
   { re: /CAMP|FIRE PIT|SMOKING|HEATED|BURNER/, centre: ["firepit"], scatter: ["sack", "bones", "embers", "stool"], scatterP: 0.1 },
   { re: /MESS|CANTEEN|KITCHEN|DINING|STOVE|FEAST|TABLE|MEETING|COUNCIL|FOOD|PRESERV|DRYING|\bDRY\b/, wall: ["hearth", "flaskshelf"], wallP: 0.2, centre: ["longtable"], scatter: ["barrel", "sack", "crate"], scatterP: 0.07 },
@@ -302,13 +303,14 @@ const THEMES: Theme[] = [
   { re: /BLACKSMITH|SMITH|FORGE|METAL/, wall: ["rack", "hearth"], wallP: 0.3, centre: ["forge"], scatter: ["embers", "sword", "crate"], scatterP: 0.08 },
   { re: /MASON|STONE WORKSHOP|SLAB|STONES|BLOCK/, centre: ["forge"], scatter: ["stoneblock", "stoneblock", "rubble"], scatterP: 0.15 },
   { re: /WORKSHOP|\bWORK\b|WORKSPACE|MANIKIN|TOOL/, wall: ["flaskshelf"], wallP: 0.3, centre: ["longtable"], scatter: ["crate", "stoneblock", "paper"], scatterP: 0.08 },
-  { re: /FOUNTAIN|FONT|BASIN|WATER/, centre: ["fountain"], scatter: ["puddle"], scatterP: 0.06 },
-  { re: /POOL|BATH|WASH|STREAM|FISHERY|JELLYFISH|PIRANHA|SEAWEED|TIDE/, centre: ["pool"], scatter: ["puddle"], scatterP: 0.06 },
-  { re: /FLOOD|DAMP|SWAMP|BOG|MUD/, overlay: "flood", scatter: ["puddle", "slime"], scatterP: 0.15 },
+  { re: /FOUNTAIN|FONT|BASIN|WATER/, centre: ["fountain"], scatter: ["puddle", "candle", "urn", "puddle"], scatterP: 0.12 },
+  { re: /WASH/, centre: ["longtable"], wall: ["flaskshelf"], wallP: 0.3, scatter: ["barrel", "flask", "puddle", "sack"], scatterP: 0.14 },
+  { re: /POOL|BATH|STREAM|FISHERY|JELLYFISH|PIRANHA|SEAWEED|TIDE/, centre: ["pool"], scatter: ["puddle", "puddle", "candle", "sack"], scatterP: 0.12 },
+  { re: /FLOOD|DAMP|SWAMP|BOG|MUD/, overlay: "flood", scatter: ["puddle", "slime", "mushrooms"], scatterP: 0.15 },
   { re: /JAIL|PRISON|PENITENTIARY|SHACKLE|HOLDING|CELLS?\b|CHAIN|QUARANTINE|BOUND|TRUSSED|WHIPPING/, wall: ["shackles"], wallP: 0.45, scatter: ["straw", "bones", "straw"], scatterP: 0.14 },
   { re: /CAGE|PEN|KENNEL|AVIARY|BEAR|BREEDING/, centre: ["cages"], scatter: ["straw", "bones", "cage"], scatterP: 0.12 },
   { re: /THRONE|KING|COURT/, wall: ["banner", "torch"], wallP: 0.4, centre: ["throne"], pillars: true },
-  { re: /HALL|GALLERY|PILLAR|COLUMN|ARCADE|AISLE|ARCHES|MARBLE|JADE|GRAND|ELEGANT/, wall: ["banner", "torch"], wallP: 0.2, pillars: true, overlay: "rug", scatter: ["rubble"], scatterP: 0.03 },
+  { re: /HALL|GALLERY|PILLAR|COLUMN|ARCADE|AISLE|ARCHES|MARBLE|JADE|GRAND|ELEGANT/, wall: ["banner", "torch"], wallP: 0.2, pillars: true, overlay: "rug", scatter: ["rubble", "candle", "urn"], scatterP: 0.06 },
   { re: /STANDING|MENHIR|MONOLITH|CIRCLE|BALANCED/, centre: ["stonecircle", "idol"] },
   { re: /FIRE|BURN|LAVA|HEAT|INFERNAL|BRAZIER|CHARRED|BOILING|EMBER/, wall: ["torch"], wallP: 0.3, centre: ["firepit"], scatter: ["embers", "brazier"], scatterP: 0.1, overlay: "lava" },
   { re: /LANTERN|TORCH|CANDLE|SCONCE/, wall: ["torch", "candles"], wallP: 0.5, scatter: ["candle"], scatterP: 0.12 },
@@ -393,6 +395,7 @@ export interface DecorItem {
   abs?: boolean; // svg already in map pixels
   cw?: number; // centre pieces: footprint in squares
   ch?: number;
+  turn?: number; // quarter turns clockwise since it was planned (dmaprotate.ts): the 3D art turns its shape to match
 }
 
 /** Choose and place a room's dressing from its name. */
@@ -427,21 +430,28 @@ export function planDressing({ room: r, reserved, wallSides, ids = "dm" }: Dress
   // pillars in two rows for halls
   if (themes.some((t) => t.pillars) && r.w >= 4 && r.h >= 4) {
     for (let x = r.x + 1; x < r.x + r.w - 1; x += 2)
-      for (const y of [r.y + 1, r.y + r.h - 2]) if (!used.has(k(x, y))) {
+      for (const y of [r.y + 1, r.y + r.h - 2]) if (inRoom(r, x, y) && !used.has(k(x, y))) {
         out.push({ kind: "pillar", name: "pillar", x: mid(x), y: mid(y), rot: 0, seed, svg: S.pillar(seed) });
         used.add(k(x, y));
       }
   }
 
   // centre piece
-  const centreName = themes.flatMap((t) => t.centre ?? [])[0];
-  if (centreName && r.w * r.h >= 2) {
-    const c = CENTRE[centreName](r.w, r.h, seed);
+  const centred = r.w * r.h >= 2
+    ? themes.flatMap((t) => t.centre ?? []).map((name) => ({ name, c: CENTRE[name](r.w, r.h, seed) })).find((x) => x.c)
+    : undefined;
+  if (centred) {
+    const { name: centreName, c } = centred;
     if (c) {
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
       const x0 = Math.round(cx - c.cw / 2), y0 = Math.round(cy - c.ch / 2);
-      out.push({ kind: "centre", name: centreName, x: f1(cx * C), y: f1(cy * C), rot: 0, seed, svg: c.svg, flat: c.flat, cw: c.cw, ch: c.ch });
-      for (let x = x0; x < x0 + Math.max(1, c.cw); x++) for (let y = y0; y < y0 + Math.max(1, c.ch); y++) used.add(k(x, y));
+      // a centre piece must sit wholly on the room's squares (a shaped room may not have room for it)
+      let fits = true;
+      for (let i = 0; i < Math.max(1, c.cw); i++) for (let j = 0; j < Math.max(1, c.ch); j++) if (!inRoom(r, x0 + i, y0 + j)) fits = false;
+      if (fits) {
+        out.push({ kind: "centre", name: centreName, x: f1(cx * C), y: f1(cy * C), rot: 0, seed, svg: c.svg, flat: c.flat, cw: c.cw, ch: c.ch });
+        for (let x = x0; x < x0 + Math.max(1, c.cw); x++) for (let y = y0; y < y0 + Math.max(1, c.ch); y++) used.add(k(x, y));
+      }
     }
   }
 
@@ -453,7 +463,7 @@ export function planDressing({ room: r, reserved, wallSides, ids = "dm" }: Dress
     for (let x = r.x; x < r.x + r.w; x++)
       for (let y = r.y; y < r.y + r.h; y++) {
         i++;
-        if (used.has(k(x, y))) continue;
+        if (!inRoom(r, x, y) || used.has(k(x, y))) continue;
         const sides = wallSides(x, y);
         if (!sides.length || rnd(seed, i, 1) > wallP) continue;
         const side = pick(sides, rnd(seed, i, 2));
@@ -468,7 +478,7 @@ export function planDressing({ room: r, reserved, wallSides, ids = "dm" }: Dress
   const scatter = themes.flatMap((t) => t.scatter ?? []);
   const scatterP = Math.max(0, ...themes.map((t) => t.scatterP ?? 0));
   const free: [number, number][] = [];
-  for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) if (!used.has(k(x, y))) free.push([x, y]);
+  for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) if (inRoom(r, x, y) && !used.has(k(x, y))) free.push([x, y]);
   if (scatter.length) {
     free.forEach(([x, y], i) => {
       if (rnd(seed, i, 7) > scatterP) return;
@@ -484,7 +494,7 @@ export function planDressing({ room: r, reserved, wallSides, ids = "dm" }: Dress
   const corners: [number, number, number, "N" | "E" | "S" | "W"][] = [[r.x, r.y, 0, "N"], [r.x + r.w - 1, r.y, 90, "E"], [r.x + r.w - 1, r.y + r.h - 1, 180, "S"], [r.x, r.y + r.h - 1, 270, "W"]];
   const webby = isVoidGame ? 0 : scatter.includes("web") ? 0.8 : 0.3; // no cobwebs in the Hulk
   corners.forEach(([x, y, rot, side], i) => {
-    if (r.w < 2 || r.h < 2 || reserved.has(k(x, y))) return;
+    if (r.w < 2 || r.h < 2 || !inRoom(r, x, y) || reserved.has(k(x, y))) return;
     if (rnd(seed, i, 20) < webby) out.push({ kind: "web", name: "web", x: mid(x), y: mid(y), rot, side, seed, svg: S.web(0) });
   });
   const grime = isVoidGame ? ["vdebris", "crack", "vcables", "vscrap"] : ["rubble", "crack", "bones", "rubble"];

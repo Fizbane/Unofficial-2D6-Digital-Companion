@@ -8,7 +8,7 @@ import type { Ocr } from "./ocr";
 import type { TextItem } from "./extract";
 import { RENDER_SCALE } from "./ocr";
 import { verifyCell } from "./verify";
-import { guessCell, guessDicePrefixed, guessLabelled } from "./closedset";
+import { guessCell, guessDicePrefixed, guessInterrupt, guessJoined, guessLabelled, guessSlice } from "./closedset";
 import { cellSource, ocrCrop, type PageReader } from "./cellsource";
 import {
   expectedHash, fieldsOf, pageRotation, rebuildSection, rowCounts, sectionPages, unlocated, type CellResult, type Field,
@@ -93,6 +93,12 @@ async function readField(
     if (d !== undefined) return { text: d, ok: true };
     const l = guess ? guessLabelled(expected, r.text, hashOf) : undefined;
     if (l !== undefined) return { text: l, ok: true };
+    const sl = guess ? guessSlice(expected, r.text, hashOf) : undefined;
+    if (sl !== undefined) return { text: sl, ok: true };
+    const it = guess ? guessInterrupt(expected, r.text, hashOf) : undefined;
+    if (it !== undefined) return { text: it, ok: true };
+    const jn = guess ? guessJoined(expected, r.text, hashOf) : undefined;
+    if (jn !== undefined) return { text: jn, ok: true };
   }
   return { text: r.text, ok: r.ok };
 }
@@ -118,7 +124,7 @@ export async function runImport(file: Blob, deps: ImportDeps): Promise<ImportRep
     if (signal.aborted || store.storeEpoch() !== epoch) throw new ImportCancelled();
   };
 
-  const { fp, key } = await digestFile(file, (done, total) => deps.onProgress({ phase: "hash", done, total }));
+  const { fp, key } = await digestFile(file, (done, total) => deps.onProgress({ phase: "hash", done, total }), check);
   check();
   if (manifest.books.some((b) => b.freeFp?.includes(fp))) return { kind: "free" };
   let book: Manifest["books"][number] | undefined, edition: Edition | undefined;

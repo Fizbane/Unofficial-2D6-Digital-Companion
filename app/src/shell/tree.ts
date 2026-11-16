@@ -6,9 +6,9 @@ import {
   BOOKMARKS, bookmarksGroup, countLinks, filterTree, isRouteHref, libraryTree, playTree, revealPath, sectionHref, treeFooter, type TreeNode,
 } from "./navmodel";
 import { byId, lib } from "../library";
-import { firstLocked, getContent, onContentChange } from "../content";
+import { bookInfo, bookLabel, firstLocked, getContent, hasFreeEdition, onContentChange } from "../content";
 import { lockedLabel } from "../ui/locked";
-import { PLAY_TOOLS } from "../tools/common";
+import { availableTools } from "../tools/common";
 import { icon } from "../ui/icon";
 import { store } from "../pages/store";
 import { html, type Raw, setHTML } from "../ui/html";
@@ -49,17 +49,20 @@ export function initTree(
   };
   /** The books from the library (free and unlocked), plus one locked node per book with locked pages. */
   const buildBooks = () => {
-    books = libraryTree({ books: lib.books, sections: lib.sections, byId }).map((n) => {
+    books = libraryTree({ books: lib.books, sections: lib.sections, byId }).flatMap((n0) => {
+      // a book with a free edition (the Codex) is "Codex Free" until the full book is unlocked, then "Codex Full" and the free one is gone
+      const n = hasFreeEdition(n0.key) ? { ...n0, label: `2D6 Dungeon: ${bookLabel(n0.key)}` } : n0;
       const id = firstLocked(n.key);
-      if (!id) return n;
+      if (!id) return [n];
       const locked: TreeNode = { key: `locked:${n.key}`, label: lockedMark(id)!, href: sectionHref(id), icon: "key-round" };
+      if (hasFreeEdition(n.key) && !bookInfo(n.key).unlocked) return n.children?.length ? [n, locked] : [locked]; // the free book, then the full one, locked
       // a book with nothing unlocked is just its locked node
-      return n.children?.length ? { ...n, children: [...n.children, locked] } : locked;
+      return [n.children?.length ? { ...n, children: [...n.children, locked] } : locked];
     });
     foot.textContent = treeFooter(lib.books.length, lib.sections.length);
   };
   buildBooks();
-  const tools = playTree(PLAY_TOOLS);
+  let tools = playTree(availableTools());
 
   const stored = () => new Set(store.list("open"));
   const fullTree = (): TreeNode[] => {
@@ -199,6 +202,7 @@ export function initTree(
   opts.events.on("tabs:changed", reveal);
   opts.events.on("bookmarks:changed", render);
   onContentChange(() => {
+    tools = playTree(availableTools()); // an addon book's tool appears or goes with its book
     buildBooks();
     render();
   });

@@ -34,11 +34,17 @@ function next() {
   setHTML(el, html`<span class="ach-toast-icon">${icon(d.icon, { size: 22 })}</span>
     <span class="ach-toast-text"><span class="ach-toast-eyebrow">Achievement unlocked</span><strong>${d.title}</strong></span>`);
   el.title = d.blurb;
+  el.classList.remove("is-leaving");
   el.hidden = true;
   void el.offsetWidth; // restart the slide-in
   el.hidden = false;
   window.setTimeout(() => {
-    el.hidden = true;
+    // slide back out (160ms = --dur), hide, then show the next one
+    if (!el.hidden) el.classList.add("is-leaving");
+    window.setTimeout(() => {
+      el.hidden = true;
+      el.classList.remove("is-leaving");
+    }, 160);
     window.setTimeout(next, 200);
   }, SHOW_MS);
 }

@@ -1,7 +1,9 @@
 // The games the companion holds: 2D6 Dungeon (with Realm) and 2D6 Void. They share nothing but the
 // shell: each has its own library file, play tools, themes, map styles, portraits, sounds and saved
 // state. The current game is read once at boot from "2d6:game"; switching saves it and reloads, so
-// every module can pick its game's lists at load time.
+// every module can pick its game's lists at load time. Each game keeps a roster of characters
+// (rostermodel.ts); the active one is picked here too, and gk() puts per-character keys in its slot.
+import { bootRoster, charBase, isCharBase, ROSTER_BASE, type Roster } from "./rostermodel";
 
 export type GameId = "dungeon" | "void";
 
@@ -49,10 +51,24 @@ export const byGame = <T>(v: Record<GameId, T>): T => v[current];
  *  backdrop) and the panel layout. */
 const SHARED = new Set([GAME_KEY, "2d6:shell:prefs", "2d6:shell:layout", "2d6:shell:backup", "2d6:shell:tutorial", "2d6:shell:playlist"]);
 
-/** The storage key for `key` in a given game: "2d6:x" for Dungeon (so old saves load), "2d6v:x" for Void. */
-export function keyFor(key: string, g: GameId): string {
+/** The raw prefix of a game's keys. */
+export const gamePrefix = (g: GameId): string => (g === "dungeon" ? "2d6:" : "2d6v:");
+
+/** The game key for `key` (no character scoping): "2d6:x" for Dungeon, "2d6v:x" for Void. */
+const gameKey = (key: string, g: GameId): string => {
   if (g === "dungeon" || SHARED.has(key) || !key.startsWith("2d6:")) return key;
   return "2d6v:" + key.slice(4);
+};
+
+let activeChar: string | null = null;
+
+/**
+ * The storage key for `key` in a given game: "2d6:x" for Dungeon, "2d6v:x" for Void. A
+ * per-character key (play state, journal, notes, rolls, tabs) goes in the character's slot,
+ * "2d6:c:<id>:x"; `char` defaults to the active character (null: unscoped).
+ */
+export function keyFor(key: string, g: GameId, char: string | null = g === current ? activeChar : null): string {
+  return gameKey(char && isCharBase(key) ? charBase(key, char) : key, g);
 }
 
 /** The storage key for `key` in the current game. */
@@ -64,6 +80,47 @@ export const isAppKey = (k: string) => k.startsWith("2d6:") || k.startsWith("2d6
 /** For tests: pretend the current game is `g` (no storage write, no reload). */
 export function _setGameForTest(g: GameId) {
   current = g;
+}
+
+/** The storage key of a game's roster. */
+export const rosterKey = (g: GameId = current): string => gameKey(ROSTER_BASE, g);
+
+function bootCharacter(): Roster | null {
+  try {
+    const ls = globalThis.localStorage;
+    if (!ls) return null;
+    const { roster, active } = bootRoster(ls, gamePrefix(current), new Date().toISOString());
+    activeChar = active;
+    return roster;
+  } catch {
+    return null;
+  }
+}
+bootCharacter();
+
+/** The character being played in the current game (null when storage couldn't hold a roster). */
+export const charId = (): string | null => activeChar;
+
+/** For tests: pretend the active character is `id`. */
+export function _setCharForTest(id: string | null) {
+  activeChar = id;
+}
+
+/** Make `id` the active character of the current game and reload into it, at `route` if it has no saved tabs. */
+export function switchCharacter(id: string, route = "#/") {
+  try {
+    const r = JSON.parse(localStorage.getItem(rosterKey()) ?? "null") as Roster | null;
+    const c = r?.chars.find((x) => x.id === id);
+    if (!r || !c) return;
+    r.active = id;
+    c.lastPlayed = new Date().toISOString();
+    localStorage.setItem(rosterKey(), JSON.stringify(r));
+  } catch {
+    return;
+  }
+  // no hashchange: the tabs of the character being left stay as they were; the next one opens its own (or Home)
+  history.replaceState(null, "", location.pathname + location.search + route);
+  location.reload();
 }
 
 /** Save the game choice and reload into its dashboard. */

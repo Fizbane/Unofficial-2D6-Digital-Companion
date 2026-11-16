@@ -16,7 +16,7 @@ export interface TileSet {
   surroundInk: string;
   surroundOp: number;
   rockFill: string[]; // cave rock lumps
-  floorStyle: "flags" | "slabs" | "earth" | "plates" | "grate" | "blueprint";
+  floorStyle: "flags" | "slabs" | "cutstone" | "inlaid" | "earth" | "plates" | "grate" | "blueprint";
   floor: Record<RoomKind, string>;
   flag: string; // flagstone / slab shading colour
   grid: string; // grid or mortar lines
@@ -24,6 +24,7 @@ export interface TileSet {
   walls: "stones" | "bricks" | "rock" | "plating" | "pipes" | "organic" | "blueprint";
   wallFill: string[];
   wallShadow: string;
+  light?: string; // reflected light on the floor around fixtures
   steps: string; // footprints
   unexplored: string;
   labelBg: string;
@@ -55,6 +56,26 @@ const DUNGEON_TILESETS: TileSet[] = [
     walls: "bricks", wallFill: ["#5d6065", "#53565b", "#676a70", "#4b4e53"], wallShadow: "#000000",
     steps: "#2b2c2f", unexplored: "#e0a33a", labelBg: "#e6e4de", labelInk: "#17181a", sub: "#4a4c50", draft: "#c9c4b4",
     iso: { wall: "#8a8d92", wallLine: "#4f5257", sideS: "#5a5d62", sideE: "#46494e", void: "#111214" },
+  },
+  {
+    id: "torchlit", name: "Torchlit Halls", blurb: "Dark flagstones, warm masonry and amber torchlight",
+    paper: "#0c0b10", dots: null, vignette: "#050409", edge: "#3b3339", ink: "#100d11",
+    surround: "none", surroundInk: "#000000", surroundOp: 0, rockFill: [],
+    floorStyle: "cutstone", floor: { entrance: "#594b40", regular: "#4b4343", small: "#463d40", large: "#544745", corridor: "#3a3438" },
+    flag: "#e2bb93", grid: "#19141b", gridOp: 0.93,
+    walls: "bricks", wallFill: ["#68584e", "#5b4c46", "#756357", "#504342"], wallShadow: "#070508", light: "#ffae50",
+    steps: "#b99a7b", unexplored: "#f7b858", labelBg: "#251d23", labelInk: "#fff0dc", sub: "#ccac96", draft: "#ae8b73",
+    iso: { wall: "#6e5e54", wallLine: "#35272a", sideS: "#393036", sideE: "#28232b", void: "#09080d" },
+  },
+  {
+    id: "moonstone", name: "Moonstone Crypt", blurb: "Blue slate, silver inlays and cool light around relics",
+    paper: "#090d17", dots: null, vignette: "#03050b", edge: "#323b53", ink: "#111726",
+    surround: "none", surroundInk: "#000000", surroundOp: 0, rockFill: [],
+    floorStyle: "inlaid", floor: { entrance: "#526279", regular: "#424c62", small: "#39495a", large: "#505978", corridor: "#313b50" },
+    flag: "#a8c3e6", grid: "#151e31", gridOp: 0.95,
+    walls: "bricks", wallFill: ["#505f78", "#444f68", "#606b83", "#3b455d"], wallShadow: "#030611", light: "#87c8f4",
+    steps: "#a4b6d0", unexplored: "#9ed9ff", labelBg: "#172132", labelInk: "#eef5ff", sub: "#b2c3dd", draft: "#91a7cc",
+    iso: { wall: "#65748e", wallLine: "#313b53", sideS: "#333e55", sideE: "#232c40", void: "#080c16" },
   },
   {
     id: "caves", name: "Caves", blurb: "Natural caverns: rough rock walls, earthen floors, pebbles and stalagmites",
@@ -139,6 +160,23 @@ export function getMapView(): MapView {
 export function setMapView(v: MapView) {
   try {
     localStorage.setItem(VIEW_KEY, JSON.stringify(v));
+  } catch {
+    /* ignore */
+  }
+}
+/** Which way the isometric camera looks: 0..3 quarter turns clockwise (dmaprotate.ts), saved beside the view. */
+export const MAP_TURN_KEY = gk("2d6:mapturn");
+export function getMapTurn(): number {
+  try {
+    const q = JSON.parse(localStorage.getItem(MAP_TURN_KEY) || "0");
+    return Number.isInteger(q) ? ((q % 4) + 4) % 4 : 0;
+  } catch {
+    return 0;
+  }
+}
+export function setMapTurn(q: number) {
+  try {
+    localStorage.setItem(MAP_TURN_KEY, JSON.stringify(((Math.round(q) % 4) + 4) % 4));
   } catch {
     /* ignore */
   }

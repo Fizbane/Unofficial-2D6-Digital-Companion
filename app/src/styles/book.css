@@ -227,3 +227,60 @@ button.dice-badge:disabled { opacity: 0.55; cursor: wait; }
 .book-page tr.unverified-row > td { font: inherit; padding: var(--space-2) 10px; }
 .book-page .unverified-row .crop-pop { margin: 0; }
 .book-page li.unverified-row { list-style: none; }
+
+
+/* ---------- creature cards (pages/book.ts renderCard): name and level across the top, the picture and
+   description on the left, the numbers and rows on the right, then the mishap and prime attack rolls ---------- */
+.creature-card {
+  --crc-mishap: #6f8fe8;
+  container-type: inline-size; margin: var(--space-4) 0; padding: var(--space-4) var(--space-5);
+  background: var(--surface-solid); border: var(--hairline); border-radius: 12px; box-shadow: var(--shadow);
+  font: 1.05rem/1.45 var(--font-ui); color: var(--ink);
+}
+.crc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding-bottom: var(--space-3); margin-bottom: var(--space-4); border-bottom: var(--hairline); }
+.crc-title { display: grid; gap: 2px; min-width: 0; }
+.book-page .creature-card .crc-name, .crc-name { margin: 0; padding: 0; border: 0; font: 700 2.1rem/1.1 var(--font-ui); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.crc-level { flex: none; padding: 4px 12px; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: 8px; font: 600 1.05rem/1.4 var(--font-ui); color: var(--accent); white-space: nowrap; }
+.crc-type { font-weight: 500; }
+.crc-body { display: grid; grid-template-columns: minmax(0, 0.64fr) minmax(0, 1fr); gap: var(--space-4) var(--space-5); align-items: start; }
+.crc-side { display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
+.crc-art:empty { display: none; }
+.crc-art .art-thumb { display: block; float: none; width: 100%; height: auto; aspect-ratio: 1; margin: 0; padding: 0; border: var(--hairline); border-radius: 8px; overflow: hidden; cursor: zoom-in; }
+.crc-art .art-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.book-page .creature-card p, .creature-card p { margin: 0; }
+.crc-desc { color: var(--muted); font-size: 1rem; line-height: 1.5; }
+.crc-main { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
+/* with no picture the card is one column: the numbers and rows, then the description under them */
+.crc-body:not(:has(.art-thumb)) { grid-template-columns: minmax(0, 1fr); }
+.crc-body:not(:has(.art-thumb)) .crc-side { order: 2; }
+.crc-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--accent) 9%, var(--surface-solid)); border: var(--hairline); }
+.crc-stats > div { display: flex; align-items: baseline; justify-content: center; gap: var(--space-2); padding: var(--space-4) var(--space-2); border-left: var(--hairline); }
+.crc-stats > div:first-child { border-left: 0; }
+.crc-stats dt, .crc-row dt { font: 700 0.76rem/1.3 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.crc-stats dd { margin: 0; font: 700 1.9rem/1 var(--font-ui); font-variant-numeric: lining-nums; }
+.crc-rows { display: grid; margin: 0; }
+.crc-row { display: grid; grid-template-columns: minmax(7.5rem, 0.32fr) minmax(0, 1fr); gap: var(--space-3); align-items: baseline; padding: var(--space-3) 0; border-bottom: var(--hairline); }
+.crc-row dt { padding-top: 3px; }
+.crc-vals { display: grid; gap: 4px; min-width: 0; }
+.crc-row dd { margin: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.crc-line { display: block; }
+.crc-roll { display: grid; gap: 4px; padding: var(--space-3) var(--space-4); border-radius: 6px; border-left: 4px solid var(--crc-mishap); background: color-mix(in srgb, var(--crc-mishap) 16%, var(--surface-solid)); }
+.crc-roll.is-prime { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, var(--surface-solid)); }
+.crc-roll > strong { font-weight: 700; }
+@container (max-width: 560px) {
+  .crc-body { grid-template-columns: minmax(0, 1fr); }
+  .crc-name { font-size: 1.6rem; }
+  .crc-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .crc-stats > div { padding: var(--space-3) var(--space-1); }
+  .crc-stats dd { font-size: 1.5rem; }
+}
+
+/* a page that shows a creature card is a fifth wider than a page of text, so the card has room */
+.page:has(.creature-card) { max-width: 1032px; }
+.book-page:has(.creature-card) { max-width: calc((70ch + 2 * var(--space-6)) * 1.2); }
+
+/* a page that opens with a creature card: the card carries the name, book and page, so the page's own
+   title block is kept for screen readers only (not while fixing, where the card is a plain table) */
+.book-page:not(.is-fixing):has(> article > .creature-card:first-child) > .book-head {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}

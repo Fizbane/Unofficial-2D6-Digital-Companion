@@ -301,6 +301,18 @@ describe("normalizeJournal", () => {
   });
 });
 
+describe("normalizeJournal and 2D6 Void", () => {
+  it("keeps a room whose exits are Void door types", () => {
+    const s = emptyJournal();
+    const { m, id } = mapWithEntrance();
+    m.exits.forEach((e, i) => (e.type = (["sliding", "security", "biocoded", "barrier", "secret"] as const)[i % 5]));
+    recordRoom(s, roomEv({ n: 1, kind: "entrance", w: 3, h: 2, map: m, mapRoom: id }), ctx(10));
+    expect(m.exits.length).toBeGreaterThan(0);
+    const n = normalizeJournal(JSON.parse(JSON.stringify(s)));
+    expect(n.entries).toHaveLength(s.entries.length);
+  });
+});
+
 describe("levelUpCheck", () => {
   it("logs a one-level rise from play, not imports, new characters or a correction round trip", () => {
     const t = { seen: 1 };

@@ -2,6 +2,7 @@
 // the UI rolls and passes the numbers in, so everything here is unit-tested
 // (test/void/hulkmodel.test.ts). The map itself is a DungeonMap (dmap.ts) sized 17×28.
 import { addRoom, findPlacement, newMap, openExits, placeEntrance, DIR, type DungeonMap, type ExitType, type MapExit, type MapRoom, type RoomKind, type Side } from "../dmap";
+import { namesIn } from "../common";
 
 export const HULK_W = 17;
 export const HULK_H = 28;
@@ -25,7 +26,7 @@ export const LEVELS: Record<number, LevelInfo> = {
   1: { name: "The Systems Deck", intro: "void/p92-2", entrance: { w: 4, h: 2, exits: 3 }, effects: "A flask of tea: drink it to heal 5 HP.", rules: ["You recognise reinforced rooms (marked *): ranged combat is allowed in them even against the hull."] },
   2: { name: "The Detention Level", intro: "void/p101-2", entrance: { w: 3, h: 3, exits: 3 }, effects: "A glass case: roll on GACT1.", rules: ["Shreev culture: SHVT1 and STHT1 are called by room text."] },
   3: { name: "The Containment Deck", intro: "void/p109-2", entrance: { w: 2, h: 3, exits: 3 }, effects: "Lose 1 HP; you find a Healing Patch (10 HP).", rules: ["Filter Mask: you can't wear head armour on this level."] },
-  4: { name: "The Genesis Level", intro: "void/p120-2", entrance: { w: 3, h: 3, exits: 3 }, effects: "A dry ration and a Medical stim from a corpse.", rules: ["Parlax robots roam this level."] },
+  4: { name: "The Genesis Level", intro: "void/p120-2", entrance: { w: 3, h: 3, exits: 3 }, effects: "From a corpse here: one Medical stim and one dry ration.", rules: ["Parlax robots roam this level."] },
   5: { name: "Military Level", intro: "void/p127-2", entrance: { w: 2, h: 4, exits: 3 }, effects: "A locked box: a Gamma Code or hex slot key opens it for 3 Healing Patches (10 HP each). The face mask is ruined.", rules: [] },
   6: { name: "Mutation Sector", intro: "void/p136-2", entrance: { w: 3, h: 3, exits: 3 }, effects: "+500 XP. A red orb: touch it to roll on PMTT1 (once).", rules: [] },
   7: { name: "Archive Level", intro: "void/p145-2", entrance: { w: 3, h: 3, exits: 3 }, effects: "+800 XP. Choose a research designation (Biological, Geographical or Astronomical).", rules: ["From level 7 on, room text calls the Level Encounters Table (L7ET1); re-roll a repeated unique encounter."] },
@@ -289,7 +290,7 @@ export function specialUniques(columns: string[], rows: string[][]): { name: str
  */
 export function exploredPct(m: DungeonMap, exclude: number[] = []): number {
   const occ = new Set<string>();
-  for (const r of m.rooms) if (!exclude.includes(r.id) && !r.draft) for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) occ.add(`${x},${y}`);
+  for (const r of m.rooms) if (!exclude.includes(r.id)) for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) occ.add(`${x},${y}`);
   for (const e of m.exits) if (!exclude.includes(e.room)) occ.add(`${e.x},${e.y}`);
   if (m.entrance) occ.add(`${m.entrance.x},${m.entrance.y}`);
   return Math.round((occ.size / (m.w * m.h)) * 100);
@@ -472,18 +473,35 @@ export function restBetweenLevels(o: { hp: number; baseline: number; charLevel: 
 }
 export const nextLevel = (level: number) => Math.min(10, level + 1);
 
+// ---------- finishing a room ----------
+/** What voidFinishBlock needs to know about the room in progress. `chain`: a Level 10 chain room (its one exit is placed for it). */
+export interface VoidFlowDraft { kind: HulkKind; chain: boolean; hasRoom: boolean; exits?: number; encDone?: boolean; byBook?: { type?: boolean } }
+/**
+ * The step to do next in a room, in the book's order: exits, room type, encounter, then finish. `ssrtPending`: a
+ * level 9 small room that hasn't rolled SSRT1 yet; that roll resizes the room, so it comes before the exits.
+ */
+export function voidCurStep(d: VoidFlowDraft & { ssrtPending?: boolean }): "exits" | "type" | "enc" | "finish" {
+  if (d.kind === "entrance") return "finish";
+  if (d.ssrtPending) return "type";
+  if (!d.chain && d.exits === undefined) return "exits";
+  if (d.kind === "corridor") return "finish";
+  if (!d.hasRoom && !d.byBook?.type) return "type";
+  return d.encDone ? "finish" : "enc";
+}
+
+/** Why the room can't be finished yet (its first unfinished step, in the book's order: exits, room type, encounter), or null when it can. */
+export function voidFinishBlock(d: VoidFlowDraft): string | null {
+  if (d.kind === "entrance") return null;
+  if (!d.chain && d.exits === undefined) return "Roll the exits first";
+  if (d.kind === "corridor") return null;
+  if (!d.hasRoom && !d.byBook?.type) return "Roll the room type first";
+  if (!d.encDone) return "Deal with the encounter first";
+  return null;
+}
+
 // ---------- reading room text ----------
 /** Alien card names that appear in CAPITALS in a room's text (they're fought there). */
-export function aliensIn(text: string, names: string[]): string[] {
-  const out: string[] = [];
-  for (const n of [...names].sort((a, b) => b.length - a.length)) {
-    const N = n.toUpperCase().trim();
-    if (N.length < 3 || out.some((o) => o.includes(N))) continue;
-    const re = new RegExp(`(^|[^A-Z])${N.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}S?($|[^A-Z])`);
-    if (re.test(text)) out.push(N);
-  }
-  return out;
-}
+export const aliensIn = namesIn;
 
 /**
  * Table codes a text tells you to roll ("roll on L1PT", "UTIT1 and GACT1", "Level Patrol Table +1"),
@@ -492,7 +510,7 @@ export function aliensIn(text: string, names: string[]): string[] {
 export function tableCodesIn(text: string, has: (code: string) => boolean, patrol: string | null = null): { code: string; modifier: number }[] {
   const found: { code: string; modifier: number; at: number }[] = [];
   const num = (s: string | undefined) => (s ? parseInt(s.replace(/\s/g, "").replace("−", "-"), 10) : 0);
-  const re = /\b([A-Z][A-Z0-9]{2,6})\b(?:\s*([+\-−]\s?\d+)(?!\s*(?:HP|XP|c\b|damage|Shift)))?/g;
+  const re = /\b([A-Z][A-Z0-9]{2,6})\b(?:\s*([+\-−]\s?\d+)(?!\d|\s*(?:HP|XP|c\b|damage|Shift)))?/g; // (?!\d): "+10 XP" must not backtrack to a "+1" modifier
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) if (/\d/.test(m[1]) && has(m[1])) found.push({ code: m[1], modifier: num(m[2]), at: m.index });
   if (patrol) {

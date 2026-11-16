@@ -213,9 +213,11 @@ describe("per-room trackers", () => {
 describe("reading room text", () => {
   const has = (c: string) => ["UTIT1", "GACT1", "L1PT", "IAUT1"].includes(c);
   it("finds tables to roll, in order, with modifiers", () => {
-    expect(tableCodesIn("You can search the space by rolling on UTIT1 and GACT1.", has)).toEqual([{ code: "UTIT1", modifier: 0 }, { code: "GACT1", modifier: 0 }]);
+    expect(tableCodesIn("Rummage through the clutter using UTIT1 and GACT1.", has)).toEqual([{ code: "UTIT1", modifier: 0 }, { code: "GACT1", modifier: 0 }]);
     expect(tableCodesIn("Roll on L1PT -2 and defend yourself. Also, roll on IAUT1.", has)).toEqual([{ code: "L1PT", modifier: -2 }, { code: "IAUT1", modifier: 0 }]);
-    expect(tableCodesIn("Lose 3 HP. Roll on the Level Patrol Table +1.", has, "L1PT")).toEqual([{ code: "L1PT", modifier: 1 }]);
+    // an amount of XP or HP after a code is never its modifier, however many digits it has
+    expect(tableCodesIn("Roll on GACT1 +10 XP for the find, then UTIT1 -12 HP.", has)).toEqual([{ code: "GACT1", modifier: 0 }, { code: "UTIT1", modifier: 0 }]);
+    expect(tableCodesIn("Lose 1 HP, then check the Level Patrol Table +2.", has, "L1PT")).toEqual([{ code: "L1PT", modifier: 2 }]);
     expect(tableCodesIn("A HC-5 and nothing else", has)).toEqual([]);
   });
   it("finds aliens named in capitals", () => {

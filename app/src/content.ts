@@ -77,8 +77,11 @@ async function install(m: Manifest, f: FreeData): Promise<void> {
 /** True when the Void library loaded with sections (false in Dungeon). The Void tools check it to explain an empty library. */
 let voidLoaded = false;
 export const voidLibraryLoaded = (): boolean => voidLoaded;
-/** True when a Void book is available on this device: the local library build, or (once imported) the owner's PDF. */
-export const voidBookLoaded = (): boolean => voidLoaded || unlocked.size > 0;
+/**
+ * True when the Void rulebook is available on this device: the local library build, or (once imported) the owner's
+ * core PDF. An expansion alone (PAL-BOT, Space Pirates) doesn't count: both play on top of the core rules.
+ */
+export const voidBookLoaded = (): boolean => voidLoaded || [...unlocked.values()].some((u) => u.section.book === "void");
 
 /**
  * 2D6 Void: its own manifest (every section locked) plus whatever the owner has unlocked from their PDF on this
@@ -117,8 +120,16 @@ export function manifest(): Manifest {
   return man;
 }
 
-const bookName = (slug: string) =>
-  manifest().books.find((b) => b.slug === slug)?.name ?? freeBooks_.find((b) => b.slug === slug)?.title ?? slug;
+/** A book that ships a free edition beside the paid one (the Tables Codex): "Codex Free" is built in, "Codex Full" is unlocked with the paid PDF. */
+export const hasFreeEdition = (slug: string): boolean => !!manifest().books.find((b) => b.slug === slug)?.freeFp?.length;
+
+/** The name of the paid book: "Codex Full" for a book that also has a free edition. */
+export const bookName = (slug: string) =>
+  hasFreeEdition(slug) ? "Codex Full" : manifest().books.find((b) => b.slug === slug)?.name ?? freeBooks_.find((b) => b.slug === slug)?.title ?? slug;
+
+/** What the book is called in lists right now: once the full Codex is unlocked it replaces the free one. */
+export const bookLabel = (slug: string): string =>
+  hasFreeEdition(slug) && ![...unlocked.values()].some((u) => u.section.book === slug) ? "Codex Free" : bookName(slug);
 
 /** Undefined when the id is not in free content, the unlocked set or the manifest. */
 export function getContent(id: string): ContentResult | undefined {
@@ -131,18 +142,32 @@ export function getContent(id: string): ContentResult | undefined {
   return undefined;
 }
 
+/**
+ * A locked book's section as the owner's PDF unlocked it: its unverified row keys (empty when all verified), or
+ * undefined when it isn't unlocked on this device. Unlike getContent, the development library (which opens every
+ * Void section as free) doesn't count, so the Books card shows what a player would see.
+ */
+export function unlockedRows(id: string): Set<string> | undefined {
+  const u = unlocked.get(id);
+  return u ? new Set(u.unverified) : undefined;
+}
+
+/** A locked book's section that is readable here only because of the development library. */
+export const devOpen = (id: string): boolean => skel.has(id) && free.has(id) && !unlocked.has(id);
+
 /** Free and unlocked ids, each once (the dev library and an imported book can hold the same Void ids). */
 export const sectionIds = (): string[] => [...new Set([...free.keys(), ...unlocked.keys()])];
 
+/** In the manifest and not readable here: neither unlocked nor free (in development the Void library loads as free). */
 export function isLocked(id: string): boolean {
-  return skel.has(id) && !unlocked.has(id);
+  return skel.has(id) && !unlocked.has(id) && !free.has(id);
 }
 
 /** A book's locked section with the lowest page, while any of the book is still locked. */
 export function firstLocked(book: string): string | undefined {
   let best: Manifest["sections"][number] | undefined;
   for (const s of skel.values())
-    if (s.book === book && !unlocked.has(s.id) && (!best || (s.pages[0] ?? Infinity) < (best.pages[0] ?? Infinity))) best = s;
+    if (s.book === book && isLocked(s.id) && (!best || (s.pages[0] ?? Infinity) < (best.pages[0] ?? Infinity))) best = s;
   return best?.id;
 }
 

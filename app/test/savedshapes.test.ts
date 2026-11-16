@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cssColor, html } from "../src/ui/html";
 import { DEFAULT_SETTINGS, getSettings, swatch } from "../src/dice3d";
-import { doorHtml, rollHtml, type DoorNote, type SavedRoll } from "../src/tools/dungeon";
+import { doorHtml, isNarrativeColumn, rollHtml, takeNarrations, type DoorNote, type SavedRoll } from "../src/tools/dungeon";
 import { encounterHtml, ownerNoteHtml, rollNoteHtml, type EncounterNote, type OwnerNote, type RollNote } from "../src/tools/realm";
 import { logHtml, type LogEntry, type LogNode } from "../src/tools/combat";
 
@@ -55,6 +55,18 @@ describe("dungeon saved rolls and doors", () => {
     expect(h).toContain("<dt>Exits</dt><dd>[2]</dd>");
     expect(h).toContain('data-f="7 Hall &lt;b&gt; 2"');
     expect(String(rollHtml({ ...roll, matched: false }, inline, follow))).toContain("L1R: rolled 7, no matching row.");
+  });
+  it("shows description and effect text as a narration bubble", () => {
+    expect(isNarrativeColumn("Description and effect")).toBe(true);
+    expect(isNarrativeColumn("Exits")).toBe(false);
+    const story: SavedRoll = { title: "TRAP", dice: "1D6 4", value: 4, matched: true, columns: ["D6", "Name", "Description"], cells: ["4", "Pit", "The floor <b>gives way"] };
+    const h = String(rollHtml(story, inline, follow));
+    expect(h).toContain('class="narrate"');
+    expect(takeNarrations().map((n) => n.who)).toEqual(["You see"]);
+    expect(h).toContain("The floor &lt;b&gt;gives way");
+    expect(h).not.toContain("<dt>Description</dt>");
+    expect(String(rollHtml(story, inline, follow))).toContain("narrate");
+    expect(takeNarrations()).toEqual([]); // already shown: no second popout
   });
   it("draws saved doors", () => {
     const o = { inline, followButtons: follow, patrol: "L1P" };

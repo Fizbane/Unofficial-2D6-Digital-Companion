@@ -91,6 +91,7 @@ function db(): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+  dbp.catch(() => (dbp = undefined)); // try again on the next backup
   return dbp;
 }
 async function idb<T>(store: string, mode: IDBTransactionMode, fn: (os: IDBObjectStore) => IDBRequest): Promise<T> {

@@ -53,10 +53,13 @@ export function libraryTree(data: NavData): TreeNode[] {
   });
 }
 
-/** The play tools, then Settings. */
+/** Tools with their own button on the rail: the Play list leaves them out (the "+" picker still has them). */
+const ON_RAIL = new Set(["characters", "bestiary", "items", "tables", "achievements", "statistics"]);
+
+/** The play tools (not those on the rail), then Settings. */
 export function playTree(tools: readonly NavTool[]): TreeNode[] {
   return [
-    ...tools.map((t) => ({ key: `play:${t.id}`, label: t.title, href: `#/play/${t.id}`, icon: t.icon })),
+    ...tools.filter((t) => !ON_RAIL.has(t.id)).map((t) => ({ key: `play:${t.id}`, label: t.title, href: `#/play/${t.id}`, icon: t.icon })),
     { key: "play:settings", label: "Settings", href: "#/play/settings", icon: "settings" as IconName },
   ];
 }

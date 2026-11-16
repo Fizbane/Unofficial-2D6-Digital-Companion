@@ -46,14 +46,41 @@
   display: grid; grid-template-columns: minmax(0, 2fr) minmax(4.5rem, 0.8fr) minmax(0, 1.4fr);
 }
 .sheet-page .rows .row:has(> [data-arr="potions"]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
-/* scroll rows: name, orbit, dispel, Cast on one line; the effect on its own line under them */
-.sheet-page .scroll-rows .row {
-  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
-  padding-bottom: var(--space-2); border-bottom: var(--hairline);
+.sheet-page .rows.has-cards .row:has(> [data-arr="armour"]) { grid-template-columns: minmax(0, 2fr) minmax(4.5rem, 0.8fr) minmax(0, 1.4fr) 1.75rem; }
+.sheet-page .rows.has-cards .row:has(> [data-arr="potions"]) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) 1.75rem; }
+.sheet-page .rows.has-cards .row:has(> [data-arr="appliedRunes"]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) 1.75rem; }
+.row-card-btn { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; align-self: center; }
+span.row-card-btn { cursor: default; }
+.row-card-btn:hover { color: var(--text); }
+.scroll-btns { display: inline-flex; align-items: end; gap: 2px; }
+/* pack lists: one chip per item */
+.pack-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--space-1) 0; }
+.pack-chip { display: inline-flex; align-items: center; gap: 2px; border: var(--hairline); border-radius: 999px; padding: 1px 2px 1px 10px; font: 0.86rem var(--font-ui); background: color-mix(in srgb, var(--text) 4%, transparent); }
+.pack-chip.is-equipped { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pack-chip-name { border: 0; background: none; padding: 2px 4px 2px 0; font: inherit; color: inherit; }
+.pack-chip-name.is-linked { cursor: pointer; text-decoration: underline dotted color-mix(in srgb, var(--accent) 70%, transparent); text-underline-offset: 3px; }
+.pack-chip-eq, .pack-chip-x { display: inline-flex; align-items: center; gap: 3px; border: 0; border-radius: 999px; background: none; color: var(--muted); font: 600 0.68rem var(--font-ui); padding: 3px 6px; cursor: pointer; }
+.pack-chip-eq.is-on { color: var(--accent); }
+.pack-chip-eq:hover, .pack-chip-x:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.pack-edit { margin-top: 0; }
+/* a scroll is a small card: name, orbit, dispel doubles and Cast on one line, the effect under them, every field labelled */
+.sheet-page .scroll-rows { gap: var(--space-2); }
+.sheet-page .scroll-rows .scroll-card {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 0.8fr) minmax(0, 1.2fr) auto; align-items: end; gap: 4px 6px;
+  padding: var(--space-2); border: var(--hairline); border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
-.sheet-page .scroll-rows .row > input[data-j="3"] { grid-column: 1 / -1; order: 5; }
+.sheet-page .scroll-rows .scroll-card.is-empty { border-left-color: var(--line, currentColor); background: none; opacity: 0.85; }
+.sheet-page .scroll-f { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sheet-page .scroll-f > span { font: 600 0.62rem var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sheet-page .scroll-f > input { width: 100%; min-width: 0; }
+.sheet-page .scroll-f-3 { grid-column: 1 / -1; order: 5; }
+.sheet-page .scroll-card > .btn { align-self: end; }
+/* column headings over a list: the same grid as the rows they name */
+.sheet-page .col-head { display: flex; gap: 6px; font: 600 0.66rem var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 2px; }
+.sheet-page .col-head > span { flex: 1; min-width: 0; }
 .sheet-page .rows .row > .btn { flex: 0 0 auto; }
-.sheet-page .scroll-rows .row:last-child { border-bottom: 0; padding-bottom: 0; }
+.ds-prisoners { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.ds-prisoners .stepper { flex: 0 0 9rem; }
 .large-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* manoeuvres you can learn */
@@ -78,3 +105,34 @@
 .portrait-pick img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 .portrait-pick:hover { border-color: var(--accent); }
 .portrait-pick:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* Animal companion: a small sheet laid out like the printed one (label chips, rounded input boxes). It fills its card and scales with the window: wider shows the three abilities side by side, taller gives the text boxes more room. */
+.comp-sheet { --cs-yellow: color-mix(in srgb, var(--hit) 80%, var(--bg)); --cs-green: color-mix(in srgb, #4c9a4c 38%, var(--bg)); --cs-box: clamp(3.5em, 6vh, 7em); container-type: inline-size; width: 100%; max-width: 820px; display: grid; gap: clamp(5px, 0.6vw, 8px); padding: clamp(6px, 0.8vw, 10px); border: 2px solid var(--ink); border-radius: 10px; background: var(--panel); font-size: 0.92rem; }
+.cs-row { display: flex; gap: clamp(5px, 0.6vw, 8px); align-items: stretch; }
+.cs-f { display: flex; align-items: stretch; min-width: 0; border: 1.5px solid var(--ink); border-radius: 6px; overflow: hidden; background: var(--bg); }
+.cs-wide { flex: 1 1 0; }
+.cs-f:not(.cs-wide) { flex: 0 1 clamp(7ch, 14%, 16ch); }
+.cs-stack { flex-direction: column; }
+.cs-lab { background: var(--cs-yellow); color: var(--ink); font: 700 0.72em/1.1 var(--font-ui); text-transform: uppercase; letter-spacing: 0.04em; padding: 0.45em 0.7em; display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; }
+.cs-stack > .cs-lab { border-bottom: 1.5px solid var(--ink); }
+.cs-f input, .cs-f textarea, .cs-abil textarea { border: 0; background: transparent; color: inherit; font: inherit; padding: 0.4em 0.6em; min-width: 0; width: 100%; outline-offset: -2px; resize: vertical; }
+.cs-f input { flex: 1 1 auto; }
+.cs-abils { display: grid; gap: inherit; }
+.cs-abil { display: grid; gap: 4px; align-content: start; }
+.cs-abil .cs-lab { background: var(--cs-green); }
+.cs-abil textarea { border: 1.5px solid var(--ink); border-radius: 6px; background: var(--bg); min-height: var(--cs-box); }
+.cs-two > .cs-f { flex: 1 1 0; }
+.cs-two textarea { flex: 1 1 auto; min-height: var(--cs-box); }
+@container (min-width: 640px) { .cs-abils { grid-template-columns: repeat(3, minmax(0, 1fr)); } .cs-abil .cs-row { flex-wrap: wrap; } .cs-abil .cs-wide { flex-basis: 100%; } }
+@container (max-width: 420px) { .cs-row { flex-wrap: wrap; } .cs-f:not(.cs-wide) { flex: 1 1 8ch; } }
+
+/* Haunted House: the Fear count and its cumulative effects */
+.haunted-fear { font-size: 1.1rem; margin: 0 0 var(--space-2); }
+.haunted-fear strong { font-size: 1.8rem; font-family: var(--font-display); }
+.haunted-fear.is-broken strong { color: var(--danger); }
+.haunted-effects { margin: var(--space-2) 0 0; padding-left: 1.6em; display: grid; gap: 4px; }
+.haunted-banes { margin: 0 0 var(--space-2); padding-left: 1.2em; display: grid; gap: 6px; }
+
+/* the companion card: fill-in pickers above the sheet */
+.cs-pick { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: end; max-width: 820px; margin-bottom: var(--space-2); }
+.cs-pick .field { flex: 1 1 200px; }

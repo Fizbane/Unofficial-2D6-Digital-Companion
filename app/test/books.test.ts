@@ -169,6 +169,15 @@ describe("Books: finishing an import on the main thread", () => {
     expect(bookStatus("codex")).toBe("Partly read: pick the PDF again to finish");
     expect(bookStatus("core")).toBe("Free · included");
   });
+
+  it("a locked book the development library opens still reads as Locked", async () => {
+    const section = { id: S1, book: "codex", title: "T", level: 1, chapter: null, pages: [1], blocks: [] };
+    await initContent(async (p: string) =>
+      structuredClone(p.endsWith("manifest.json") ? MANIFEST : { books: [], sections: [section] }));
+    await refreshBookState();
+    expect(getContent(S1)?.ok).toBe(true);
+    expect(bookStatus("codex")).toBe("🔒 Locked · readable here from the development library");
+  });
 });
 
 describe("Books: Lock covers the Claude pack path, and says when it fails", () => {

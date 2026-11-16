@@ -8,20 +8,23 @@ import { noteUnlock } from "./books";
 /** "🔒 Tables Codex · p. 52": plain text (titles, breadcrumbs, tab names); html`` escapes it in markup. */
 export const lockedLabel = (l: Locked): string => `🔒 ${l.bookName} · p. ${l.page}`;
 
-/** The card: "🔒 Open your <em>Tables Codex</em> PDF to unlock" and an Unlock… button (data-act="unlock"). */
-export function lockedCard(l: Locked): Raw {
-  return html`<div class="card locked-card" data-locked="${l.book}"><div class="card-body"><p class="locked-copy">🔒 Open your <em>${l.bookName}</em> PDF to unlock</p><p class="muted locked-where">${lockedLabel(l)}</p><div class="step-actions">${button("Unlock…", { icon: "key-round", variant: "primary", attrs: html`data-act="unlock" data-book="${l.book}"` })}</div>${storeAvailable() ? "" : html`<p class="muted locked-note">Saved books can't be read in this browser mode</p>`}</div></div>`;
+/**
+ * The card: "🔒 Open your <em>Tables Codex</em> PDF to unlock" and an Unlock… button (data-act="unlock").
+ * `quiet`: inside a step-by-step page, where the step's own action is the primary button.
+ */
+export function lockedCard(l: Locked, quiet = false): Raw {
+  return html`<div class="card locked-card" data-locked="${l.book}"><div class="card-body"><p class="locked-copy">🔒 Open your <em>${l.bookName}</em> PDF to unlock</p><p class="muted locked-where">${lockedLabel(l)}</p><div class="step-actions">${button("Unlock…", { icon: "key-round", variant: quiet ? undefined : "primary", attrs: html`data-act="unlock" data-book="${l.book}"` })}</div>${storeAvailable() ? "" : html`<p class="muted locked-note">Saved books can't be read in this browser mode</p>`}</div></div>`;
 }
 
 /** Locked cards for a list of placeholders, one per book page. */
-export function lockedCards(list: readonly Locked[]): Raw {
+export function lockedCards(list: readonly Locked[], quiet = false): Raw {
   const seen = new Set<string>();
   return html`${list
     .filter((l) => {
       const k = `${l.book}:${l.page}`;
       return !seen.has(k) && !!seen.add(k);
     })
-    .map(lockedCard)}`;
+    .map((l) => lockedCard(l, quiet))}`;
 }
 
 /**

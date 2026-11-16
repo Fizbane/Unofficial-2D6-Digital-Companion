@@ -44,11 +44,14 @@ function base64url(b: Uint8Array): string {
 export async function digestFile(
   blob: Blob,
   onProgress?: (done: number, total: number) => void,
+  /** Called before each chunk; throw from it to stop (the importer's cancel check). */
+  check?: () => void,
 ): Promise<{ fp: string; key: Uint8Array }> {
   const fpHash = sha256.create();
   const keyHash = sha256.create().update(enc.encode(KEY_PREFIX));
   const total = blob.size;
   for (let off = 0; off < total; off += CHUNK) {
+    check?.();
     const end = Math.min(total, off + CHUNK);
     const chunk = new Uint8Array(await blob.slice(off, end).arrayBuffer());
     fpHash.update(chunk);

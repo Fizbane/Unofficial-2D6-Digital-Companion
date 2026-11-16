@@ -43,8 +43,19 @@ const CLOTH = ["#a8323a", "#2f5b8a", "#3d7a4a", "#7a4a8a", "#b0742a"];
 const BOOKS = ["#7b2d2d", "#2d4f7b", "#2d6b3f", "#8a6d2a", "#5b2d6b", "#a04a2a"];
 
 // ---------- 3D primitives (grid units; z and h in screen px) ----------
+// While a turned piece of furniture is drawn (its map was turned, dmaprotate.ts), the primitives
+// turn every point and footprint about the piece's centre, so a long table stays long the same way.
+let PIV: { x: number; y: number; q: number } | null = null;
+function at(gx: number, gy: number): [number, number] {
+  if (!PIV) return [gx, gy];
+  let dx = gx - PIV.x, dy = gy - PIV.y;
+  for (let i = 0; i < PIV.q; i++) [dx, dy] = [-dy, dx];
+  return [PIV.x + dx, PIV.y + dy];
+}
 /** A box centred on (gx,gy): w along x, d along y, h tall, sitting at height z. */
 export function box(gx: number, gy: number, w: number, d: number, h: number, col: string, z = 0, line = INK): Raw {
+  [gx, gy] = at(gx, gy);
+  if (PIV && PIV.q % 2) [w, d] = [d, w];
   const x0 = gx - w / 2, x1 = gx + w / 2, y0 = gy - d / 2, y1 = gy + d / 2;
   const s = html`stroke="${line}" stroke-width=".6" stroke-linejoin="round"`;
   return (
@@ -53,15 +64,18 @@ export function box(gx: number, gy: number, w: number, d: number, h: number, col
 }
 /** A cylinder standing on (gx,gy), radius r (grid units), h tall. */
 export function cyl(gx: number, gy: number, r: number, h: number, col: string, z = 0, line = INK): Raw {
+  [gx, gy] = at(gx, gy);
   const [cx, cy] = iso(gx, gy, z);
   const rx = r * HX * 1.414, ry = r * HY * 1.414;
   return html`<path d="M${f1(cx - rx)} ${f1(cy - h)}L${f1(cx - rx)} ${f1(cy)}A${f1(rx)} ${f1(ry)} 0 0 0 ${f1(cx + rx)} ${f1(cy)}L${f1(cx + rx)} ${f1(cy - h)}Z" fill="${shade(col, 0.82)}" stroke="${line}" stroke-width=".6"/><ellipse cx="${f1(cx)}" cy="${f1(cy - h)}" rx="${f1(rx)}" ry="${f1(ry)}" fill="${shade(col, 1.15)}" stroke="${line}" stroke-width=".6"/>`;
 }
 export function sphere(gx: number, gy: number, z: number, r: number, col: string): Raw {
+  [gx, gy] = at(gx, gy);
   const [cx, cy] = iso(gx, gy, z);
   return html`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${r}" fill="${col}" stroke="${INK}" stroke-width=".6"/><circle cx="${f1(cx - r / 3)}" cy="${f1(cy - r / 3)}" r="${f1(r / 3)}" fill="#fff" opacity=".45"/>`;
 }
 export function flame(gx: number, gy: number, z: number, r = 3): Raw {
+  [gx, gy] = at(gx, gy);
   const [cx, cy] = iso(gx, gy, z);
   return html`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r * 2.4)}" fill="#ffb347" opacity=".25"/><path d="M${f1(cx - r)} ${f1(cy)} Q${f1(cx)} ${f1(cy - r * 3)} ${f1(cx + r)} ${f1(cy)} Q${f1(cx)} ${f1(cy + r)} ${f1(cx - r)} ${f1(cy)}Z" fill="#f07b22"/><circle cx="${f1(cx)}" cy="${f1(cy - r * 0.4)}" r="${f1(r * 0.45)}" fill="#ffe08a"/>`;
 }
@@ -170,6 +184,16 @@ const STANDING: Record<string, Art> = {
 };
 
 function cage(gx: number, gy: number, s: number, h: number): Raw {
+  [gx, gy] = at(gx, gy);
+  const piv = PIV;
+  PIV = null; // a square cage looks the same turned; draw its bars about its (turned) centre
+  try {
+    return cageAt(gx, gy, s, h);
+  } finally {
+    PIV = piv;
+  }
+}
+function cageAt(gx: number, gy: number, s: number, h: number): Raw {
   const x0 = gx - s / 2, x1 = gx + s / 2, y0 = gy - s / 2, y1 = gy + s / 2;
   let d = "";
   const up = (x: number, y: number) => {
@@ -307,9 +331,15 @@ Object.assign(CENTRES, {
  */
 export function isoItem(it: DecorItem): Raw | null {
   if (it.kind === "overlay" || it.kind === "mist" || it.kind === "web" || it.kind === "grime") return null;
-  if (it.kind === "centre") return CENTRES[it.name]?.(it) ?? null;
+  // wall furniture already follows its (turned) wall side
   if (it.kind === "wall") return WALL_FURNITURE[it.name]?.(it) ?? null;
-  return STANDING[it.name]?.(it) ?? null;
+  PIV = it.turn ? { x: it.x / CELL, y: it.y / CELL, q: it.turn % 4 } : null;
+  try {
+    if (it.kind === "centre") return CENTRES[it.name]?.(it) ?? null;
+    return STANDING[it.name]?.(it) ?? null;
+  } finally {
+    PIV = null;
+  }
 }
 /** Centre pieces that also want their top-down drawing painted on the floor under them (rugs, blood). */
 export const CENTRE_FLAT = new Set(["altar", "optable", "pool", "pit", "firepit", "stonecircle"]);

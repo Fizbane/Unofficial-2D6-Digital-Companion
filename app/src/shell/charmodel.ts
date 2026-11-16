@@ -32,20 +32,23 @@ export const clampXp = (v: number): number => (Number.isFinite(v) ? Math.max(0, 
  * correction and takes those 10 HP per level back (never below 0); an XP round trip across a
  * threshold leaves HP where it was. `lastLevel` always follows the level. Mutates `c`.
  */
-export function applyXp(c: { xp: number; hp: number; lastLevel: number }, xp: number, levelOf: (xp: number) => number): { from: number; to: number } {
+export function applyXp(c: { xp: number; hp: number; lastLevel: number }, xp: number, levelOf: (xp: number) => number, baseHp: (level: number) => number = (l) => 10 * l): { from: number; to: number; hp: number } {
   const from = c.lastLevel;
   c.xp = clampXp(xp);
   const to = levelOf(c.xp);
-  if (to > from) c.hp += 10 * (to - from);
-  else if (to < from) c.hp = Math.max(0, c.hp - 10 * (from - to));
+  // `baseHp` is the class's baseline HP at a level: 10 a level for an adventurer, the book's own ladder for a constable
+  const hp = Math.abs(baseHp(to) - baseHp(from));
+  if (to > from) c.hp += hp;
+  else if (to < from) c.hp = Math.max(0, c.hp - hp);
   c.lastLevel = to;
-  return { from, to };
+  return { from, to, hp };
 }
 
 /** The toast for a level change (the sheet's level-up wording), or null when the level held. */
-export function levelChangeText(ch: { from: number; to: number }, title: string): string | null {
-  if (ch.to > ch.from) return `Level up! ${title} (level ${ch.to}). +10 HP. You may gain or swap a manoeuvre.`;
-  if (ch.to < ch.from) return `Back to ${title} (level ${ch.to}). −${10 * (ch.from - ch.to)} HP.`;
+export function levelChangeText(ch: { from: number; to: number; hp?: number }, title: string): string | null {
+  const hp = ch.hp ?? 10 * Math.abs(ch.to - ch.from);
+  if (ch.to > ch.from) return `Level up! ${title} (level ${ch.to}). +${hp} HP. You may gain or swap a manoeuvre.`;
+  if (ch.to < ch.from) return `Back to ${title} (level ${ch.to}). −${hp} HP.`;
   return null;
 }
 
@@ -54,6 +57,9 @@ export const stepCondition = (n: number | undefined, delta: number): number => M
 
 /** The Fatigue die can be changed only while a fight is on (your turn or theirs). */
 export const fatigueEditable = (combat: { phase?: string } | null | undefined): boolean => combat?.phase === "you" || combat?.phase === "foes";
+
+/** Rations: a counter, 0 or more. */
+export const stepRations = (n: number | undefined, delta: number): number => Math.max(0, Math.min(99, (n || 0) + delta));
 
 /** The Fatigue die: 1–6. */
 export const stepFatigue = (f: number | undefined, delta: number): number => Math.max(1, Math.min(6, (f ?? 1) + delta));
@@ -88,8 +94,8 @@ export function setPortrait<C extends { portrait?: string }>(c: C, pic: string, 
 }
 
 /** XP gained in play (Combat's bank XP…): applied at once, "the minute you have enough XP" (Core Rules). */
-export const addXp = (c: { xp: number; hp: number; lastLevel: number }, gained: number, levelOf: (xp: number) => number) =>
-  applyXp(c, c.xp + gained, levelOf);
+export const addXp = (c: { xp: number; hp: number; lastLevel: number }, gained: number, levelOf: (xp: number) => number, baseHp?: (level: number) => number) =>
+  applyXp(c, c.xp + gained, levelOf, baseHp);
 
 /**
  * `lastLevel` for an imported character: kept when it is a positive whole number (the app's own

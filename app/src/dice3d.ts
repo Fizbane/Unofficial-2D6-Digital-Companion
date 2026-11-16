@@ -7,6 +7,7 @@ import { d6, rollValues, type RollResult } from "./dice";
 import { cssColor } from "./ui/html";
 import { bus } from "./shell/events";
 import { playSfx } from "./audio/sound";
+import { takeRig } from "./dice/rig";
 
 export interface Look {
   id: string;
@@ -17,6 +18,15 @@ export interface Look {
   color?: string; // default colour for tintable looks
   group: string;
 }
+const CELESTIAL_LOOKS: Look[] = [
+  { id: "sunCore", name: "Sun", theme: "sunCore", pips: true, tint: false, group: "Celestial" },
+  { id: "moonCore", name: "Moon", theme: "moonCore", pips: true, tint: false, group: "Celestial" },
+];
+const CELESTIAL_PRESET: { name: string; dice: [DieStyle, DieStyle] } = {
+  name: "Sun & Moon",
+  dice: [{ look: "sunCore", color: "", name: "Sun" }, { look: "moonCore", color: "", name: "Moon" }],
+};
+const isCelestial = (style: DieStyle) => CELESTIAL_LOOKS.some((look) => look.id === style.look);
 const DUNGEON_LOOKS: Look[] = [
   { id: "classic", name: "Classic", theme: "default", pips: false, tint: true, color: "#b8432a", group: "Classic" },
   { id: "pips", name: "Classic pips", theme: "smooth-pip", pips: true, tint: true, color: "#f4f1e8", group: "Classic" },
@@ -33,6 +43,7 @@ const DUNGEON_LOOKS: Look[] = [
   { id: "stone", name: "Stone", theme: "rock", pips: false, tint: true, color: "#b7aca1", group: "Natural" },
   { id: "wood", name: "Wood", theme: "wooden", pips: false, tint: false, group: "Natural" },
   { id: "rolling", name: "Dice of Rolling", theme: "diceOfRolling", pips: false, tint: false, group: "Natural" },
+  ...CELESTIAL_LOOKS,
   { id: "starOrb", name: "Star orb", theme: "starOrb", pips: true, tint: true, color: "#f7a21b", group: "Fun" },
   { id: "pirate", name: "Pirate skulls", theme: "pirate", pips: true, tint: true, color: "#202020", group: "Fun" },
 ];
@@ -51,6 +62,7 @@ const VOID_LOOKS: Look[] = [
   { id: "aether", name: "Aether copper", theme: "aether", pips: true, tint: false, group: "Steampunk" },
   { id: "saberBlue", name: "Light blade (blue)", theme: "saberBlue", pips: true, tint: false, group: "Space opera" },
   { id: "saberRed", name: "Light blade (red)", theme: "saberRed", pips: true, tint: false, group: "Space opera" },
+  ...CELESTIAL_LOOKS,
   ...DUNGEON_LOOKS.filter((l) => ["classic", "pips", "glass", "galaxy", "silver"].includes(l.id)).map((l) => ({ ...l, group: "Plain" })),
 ];
 /** The current game's dice looks (Settings lists these). */
@@ -62,8 +74,12 @@ export interface DieStyle { look: string; color: string; name: string }
 export interface DiceSettings {
   enabled: boolean;
   size: number;
+  /** Die 1 (the Primary die) and Die 2 (Secondary): every D6 and 2D6 throw. They may look the same. */
   dice: [DieStyle, DieStyle];
-  tens: 0 | 1; // which die gives the D66 tens digit (and is the Primary die)
+  /** Thrown only as a D66's tens digit, beside Die 1 as the units; always shown different from Die 1. */
+  tensDie: DieStyle;
+  /** Before the tens die: which of the two gave the tens digit. Read once to keep that die the Primary one; always 0 now. */
+  tens: 0 | 1;
 }
 export const DEFAULT_SETTINGS: DiceSettings = {
   enabled: true,
@@ -78,6 +94,10 @@ export const DEFAULT_SETTINGS: DiceSettings = {
       { look: "plasma", color: "", name: "Plasma core" },
     ],
   }),
+  tensDie: byGame<DieStyle>({
+    dungeon: { look: "gold", color: "", name: "Gold" },
+    void: { look: "saberRed", color: "", name: "Light blade (red)" },
+  }),
   tens: 0,
 };
 /** One quick look per Void dice set (both dice the same skin), then the mixed pairs. */
@@ -87,12 +107,14 @@ const VOID_PRESETS: { name: string; dice: [DieStyle, DieStyle] }[] = [
     return { name, dice: [{ look: id, color: "", name }, { look: id, color: "", name }] as [DieStyle, DieStyle] };
   }),
   { name: "Hologram & plasma (default)", dice: DEFAULT_SETTINGS.dice },
+  CELESTIAL_PRESET,
   { name: "Light blade duel", dice: [{ look: "saberBlue", color: "", name: "Blue blade" }, { look: "saberRed", color: "", name: "Red blade" }] },
   { name: "Netrunner", dice: [{ look: "neon", color: "", name: "Neon grid" }, { look: "glitch", color: "", name: "Glitch chrome" }] },
   { name: "Steam & gears", dice: [{ look: "clockwork", color: "", name: "Clockwork brass" }, { look: "aether", color: "", name: "Aether copper" }] },
 ];
 const DUNGEON_PRESETS: { name: string; dice: [DieStyle, DieStyle] }[] = [
   { name: "Red & ivory (default)", dice: DEFAULT_SETTINGS.dice },
+  CELESTIAL_PRESET,
   { name: "Star orbs", dice: [{ look: "starOrb", color: "#f7a21b", name: "Orange orb" }, { look: "starOrb", color: "#ffcf3f", name: "Gold orb" }] },
   { name: "Straw-hat pirates", dice: [{ look: "pirate", color: "#c1121f", name: "Red skull" }, { look: "pirate", color: "#e9c46a", name: "Straw skull" }] },
   { name: "Jolly Roger", dice: [{ look: "pirate", color: "#151515", name: "Black flag" }, { look: "pirate", color: "#f2f2f2", name: "White flag" }] },
@@ -117,7 +139,11 @@ export function getSettings(): DiceSettings {
       return { look: typeof x.look === "string" ? x.look : DEFAULT_SETTINGS.dice[i].look, color: cssColor(x.color, ""), name: typeof x.name === "string" ? x.name : "" };
     };
     base.dice = Array.isArray(base.dice) && base.dice.length === 2 ? [die(base.dice[0], 0), die(base.dice[1], 1)] : [{ ...DEFAULT_SETTINGS.dice[0] }, { ...DEFAULT_SETTINGS.dice[1] }];
-    if (base.tens !== 0 && base.tens !== 1) base.tens = DEFAULT_SETTINGS.tens;
+    // settings from before the tens die: the old tens die was also the Primary die, so it becomes Die 1
+    if (base.tens === 1) base.dice = [base.dice[1], base.dice[0]];
+    base.tens = 0;
+    base.tensDie = base.tensDie && typeof base.tensDie === "object" ? die(base.tensDie, 0) : { ...DEFAULT_SETTINGS.tensDie };
+    if (!base.tensDie.look || !LOOKS.some((l) => l.id === base.tensDie.look)) base.tensDie = { ...DEFAULT_SETTINGS.tensDie };
     if (typeof base.size !== "number" || !Number.isFinite(base.size)) base.size = DEFAULT_SETTINGS.size;
     // migrate the old on/off flag
     if (!raw && localStorage.getItem(gk("2d6:dice3d")) === "false") base.enabled = false;
@@ -134,35 +160,40 @@ export function saveSettings(s: DiceSettings) {
   }
   if (!s.enabled) box?.clear();
   box?.updateConfig?.({ scale: s.size });
+  window.dispatchEvent(new Event("2d6:dice-settings")); // the floating dice button repaints its cube
 }
 export const is3D = () => getSettings().enabled;
 export function set3D(on: boolean) {
   saveSettings({ ...getSettings(), enabled: on });
 }
 
-/** Display name for die i (0/1), e.g. "Red". */
-export const dieName = (s: DiceSettings, i: number) => s.dice[i].name || lookById(s.dice[i].look).name;
+/** Display name for die i (0/1, or 2 for the tens die), e.g. "Red". */
+export const dieName = (s: DiceSettings, i: number) => styleName(i === 2 ? s.tensDie : s.dice[i]);
+const styleName = (d: DieStyle) => d.name || lookById(d.look).name;
 /** CSS colour to show for a die (swatches in the UI). */
 export function swatch(d: DieStyle) {
   const look = lookById(d.look);
   if (look.tint) return cssColor(d.color, "") || look.color || "#888";
   const fixed: Record<string, string> = { gold: "#d8b04a", silver: "#c9ced6", copper: "#c4734a", lava: "#ff6a00", galaxy: "#3b2a8a", marble: "#c86fd0", weathered: "#5f8f86", wood: "#9b6a3c", rolling: "#e7e2d6",
     hologram: "#28dcff", plasma: "#d23cff", hyperspace: "#3a5bd8", neon: "#ff28c8", circuit: "#1f8a4c", glitch: "#c4cad4",
-    clockwork: "#d6a848", aether: "#3fa58e", saberBlue: "#2a8cff", saberRed: "#ff2a2a" };
+    sunCore: "#a14c0a", moonCore: "#243f79", clockwork: "#d6a848", aether: "#3fa58e", saberBlue: "#2a8cff", saberRed: "#ff2a2a" };
   return fixed[look.id] ?? "#888";
 }
 
-let box: any = null;
-let ready: Promise<boolean> | null = null;
+let box: DiceBox | null = null;
+const engines = new Map<boolean, Promise<DiceBox | null>>();
 let busy = false;
 let clearTimer = 0;
 
-function init(): Promise<boolean> {
-  if (ready) return ready;
-  ready = (async () => {
+function init(celestial: boolean): Promise<DiceBox | null> {
+  const existing = engines.get(celestial);
+  if (existing) return existing;
+  const ready = (async () => {
     try {
       const dir = location.pathname.replace(/[^/]*$/, ""); // works under any base path
-      box = new DiceBox({
+      const engine = new DiceBox({
+        id: celestial ? "dice-canvas-celestial" : "dice-canvas-standard",
+        offscreen: !celestial,
         container: "#dice-layer",
         assetPath: `${dir}assets/dice-box/`,
         origin: location.origin,
@@ -178,20 +209,21 @@ function init(): Promise<boolean> {
         enableShadows: true,
         shadowTransparency: 0.7,
       });
-      await box.init();
-      return true;
+      await engine.init();
+      engine.hide();
+      return engine;
     } catch (e) {
       console.warn("3D dice unavailable, using instant rolls", e);
-      box = null;
-      return false;
+      return null;
     }
   })();
+  engines.set(celestial, ready);
   return ready;
 }
 
 /** Warm up the physics engine in the background so the first roll is quick. */
 export function preload() {
-  if (is3D()) setTimeout(() => init(), 1500);
+  if (is3D()) setTimeout(() => init(getSettings().dice.some(isCelestial)), 1500);
 }
 
 type Group = { qty: number; sides: number | string; theme: string; themeColor: string };
@@ -200,17 +232,62 @@ function groupFor(style: DieStyle): Group {
   return { qty: 1, sides: look.pips ? "pip" : 6, theme: look.theme, themeColor: (look.tint ? style.color || look.color : look.color) || "#888888" };
 }
 
+/** Partner skins for looks that can't be recoloured: the second die takes one when both dice match. */
+const PARTNER: Record<string, string> = {
+  sunCore: "moonCore", moonCore: "sunCore",
+  hologram: "plasma", plasma: "hologram", hyperspace: "neon", neon: "hyperspace", circuit: "glitch", glitch: "circuit",
+  clockwork: "aether", aether: "clockwork", saberBlue: "saberRed", saberRed: "saberBlue",
+  gold: "silver", silver: "gold", copper: "silver", lava: "galaxy", galaxy: "lava", marble: "galaxy",
+  weathered: "copper", wood: "rolling", rolling: "wood",
+};
+/** Colours a tintable second die can take, the one furthest from the first die's colour wins. */
+const CONTRAST: { color: string; name: string }[] = [
+  { color: "#e9dfc7", name: "Ivory" }, { color: "#b8432a", name: "Red" }, { color: "#202020", name: "Black" },
+  { color: "#3d6bb3", name: "Blue" }, { color: "#d8b04a", name: "Gold" },
+];
+const rgb = (hex: string): [number, number, number] | null => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const colourGap = (a: string, b: string): number => {
+  const x = rgb(a), y = rgb(b);
+  return x && y ? Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) : a === b ? 0 : Infinity;
+};
+
+/**
+ * `second` as thrown beside `first`. When they would look alike (the same skin, or the same tintable look in
+ * nearly the same colour), `second` gets a contrasting colour or a partner skin. Used for the D66 tens die,
+ * so it can always be told apart from the units die (Die 1). Settings are left as they are.
+ */
+export function distinctPair(first: DieStyle, second: DieStyle): [DieStyle, DieStyle] {
+  const g1 = groupFor(first), g2 = groupFor(second);
+  const alike = g1.theme === g2.theme && g1.sides === g2.sides && colourGap(g1.themeColor, g2.themeColor) < 90;
+  if (!alike) return [first, second];
+  const look = lookById(first.look);
+  if (look.tint) {
+    const best = CONTRAST.reduce((x, y) => (colourGap(g1.themeColor, y.color) > colourGap(g1.themeColor, x.color) ? y : x));
+    return [first, { look: first.look, color: best.color, name: best.name }];
+  }
+  const partner = LOOKS.find((l) => l.id === PARTNER[look.id]) ?? LOOKS.find((l) => l.theme !== look.theme)!;
+  return [first, { look: partner.id, color: partner.tint ? partner.color ?? "" : "", name: partner.name }];
+}
+
 function plan(kind: string): { styles: DieStyle[]; finish: (vals: number[]) => RollResult } {
   const s = getSettings();
-  const first = s.dice[s.tens]; // the tens/Primary die always rolls first
-  const second = s.dice[1 - s.tens];
-  const n1 = dieName(s, s.tens), n2 = dieName(s, 1 - s.tens);
+  const [first, second] = s.dice; // Die 1 (Primary) always rolls first
+  const n1 = dieName(s, 0), n2 = dieName(s, 1);
   const k = kind.toUpperCase().replace(/\s/g, "");
-  if (k === "D66")
+  if (k === "D66") {
+    // the tens die rolls first (its value is the tens digit), Die 1 gives the units; the tens die never looks like Die 1
+    const tens = distinctPair(first, s.tensDie)[1];
+    const nt = styleName(tens);
     return {
-      styles: [first, second],
-      finish: ([a, b]) => ({ label: "D66", dice: [a, b], value: a * 10 + b, text: `${a}${b}  (${n1} ${a} tens, ${n2} ${b} units)` }),
+      styles: [tens, first],
+      finish: ([a, b]) => ({ label: "D66", dice: [a, b], value: a * 10 + b, text: `${a}${b}  (${nt} ${a} tens, ${n1} ${b} units)` }),
     };
+  }
   if (k === "D3")
     return {
       styles: [first],
@@ -244,21 +321,40 @@ function thrownInstantly(kind: string): RollResult {
 }
 
 /** Roll dice: physically in 3D when available, otherwise instantly. Every result is announced on the bus. */
-export async function rollDice(kind: string): Promise<RollResult> {
-  const r = await rollDiceRaw(kind);
+export async function rollDice(kind: string, tag?: string): Promise<RollResult> {
+  const r = scripted(kind, tag) ?? (await rollDiceRaw(kind));
   bus.emit("dice:rolled", { kind, dice: [...r.dice] });
   return r;
 }
 
+/** The tutorial's scripted faces for this roll (dice/rig.ts), shown as an instant throw; null to roll normally. */
+function scripted(kind: string, tag?: string): RollResult | null {
+  const { styles, finish } = plan(kind);
+  const vals = takeRig(kind, tag, styles.length);
+  if (!vals) return null;
+  if (vals.length !== styles.length) return null;
+  playSfx("dice-throw");
+  return finish(vals);
+}
+
 async function rollDiceRaw(kind: string): Promise<RollResult> {
   if (!is3D() || busy) return thrownInstantly(kind);
-  const ok = await init();
-  if (!ok || !box) return thrownInstantly(kind);
   const { styles, finish } = plan(kind);
   busy = true;
+  const engine = await init(styles.some(isCelestial));
+  if (!engine || !is3D()) {
+    busy = false;
+    return thrownInstantly(kind);
+  }
+  if (box !== engine) {
+    box?.clear();
+    box?.hide();
+    box = engine;
+  }
   clearTimeout(clearTimer);
   document.body.classList.add("dice-rolling");
   try {
+    await engine.updateConfig({ scale: getSettings().size });
     box.show();
     playSfx("dice-throw");
     const results: unknown = await box.roll(styles.map(groupFor));

@@ -27,7 +27,7 @@ describe("dungeon while the Codex is locked", () => {
     const { roomTypeStep } = await import("../src/tools/dungeon");
     const l2 = String(roomTypeStep(2, "regular", false));
     expect(l2).toContain('data-act="unlock"');
-    expect(l2).toContain("Open your <em>Tables Codex</em> PDF to unlock");
+    expect(l2).toContain("Open your <em>Codex Full</em> PDF to unlock");
     expect(l2).not.toContain('data-act="type"');
     const l1 = String(roomTypeStep(1, "regular", false));
     expect(l1).toContain('data-act="type"');
@@ -161,7 +161,7 @@ describe("fix round 2: saved buildings while the Realm is locked", () => {
 describe("fix round 2: card fields", () => {
   it("keeps a field whole when it contains an asterisk", async () => {
     const { parseBuildingCard } = await import("../src/tools/realm");
-    const c = parseBuildingCard("realm/p137-1", "Hut", "**HP:** 4 **Size:** 5 **Cost:** 10 GC **Requires:** Nothing **Benefit:** Gives a *small* bonus, see note*. **Upgrade:** L2 for 5 GC. Gives 1 GC per turn.");
+    const c = parseBuildingCard("realm/p137-1", "Hut", "**HP:** 3 **Size:** 2 **Cost:** 7 GC **Requires:** Nothing **Benefit:** Gives a *small* bonus, see note*. **Upgrade:** L2 for 5 GC. Gives 1 GC per turn.");
     expect(c?.benefit).toBe("Gives a *small* bonus, see note*.");
     expect(c?.income).toEqual([0, 1]);
   });
@@ -179,5 +179,62 @@ describe("fix round 2: combat by-hand values survive a redraw", () => {
     expect(html).toContain(">[5][4] Claw = 1D6</textarea>");
     expect(html).toContain('<details class="cb-manual" open>');
     expect(String(manualFormHtml(draft, false))).toContain('<details class="cb-manual">');
+  });
+});
+
+describe("addon tools hide until their book is unlocked", () => {
+  it.skipIf(!haveData)("Realm is hidden while its book is locked, and everything else stays listed", async () => {
+    const { availableTools, toolHidden, PLAY_TOOLS } = await import("../src/tools/common");
+    expect(toolHidden("realm")).toBe(true);
+    expect(availableTools().some((t) => t.id === "realm")).toBe(false);
+    expect(availableTools().some((t) => t.id === "dungeon")).toBe(true);
+    expect(PLAY_TOOLS.some((t) => t.id === "realm")).toBe(true); // titles and icons still resolve
+    expect(toolHidden("dungeon")).toBe(false);
+    expect(toolHidden("nonsense")).toBe(false);
+  });
+});
+
+describe("per-character expansions and classes", () => {
+  it("an older character (no class, no expansions) is an adventurer with none, and validates", async () => {
+    const { blankCharacter, classOf, hasExpansion, validateCharacter, levelOf, levelFn, levelTitle } = await import("../src/tools/sheet");
+    const old: Record<string, unknown> = { ...blankCharacter() };
+    delete old.class;
+    delete old.expansions;
+    expect(() => validateCharacter(old)).not.toThrow();
+    expect(classOf(old)).toBe("adventurer");
+    expect(hasExpansion(old as never, "lairs")).toBe(false);
+    expect(levelOf(0)).toBe(1);
+    expect(levelFn(old)(100)).toBe(2);
+    expect(levelTitle(old, 1)).toBe("Raw");
+  });
+  it("rejects a bad class or expansion value", async () => {
+    const { blankCharacter, validateCharacter } = await import("../src/tools/sheet");
+    expect(() => validateCharacter({ ...blankCharacter(), class: "wizard" })).toThrow();
+    expect(() => validateCharacter({ ...blankCharacter(), expansions: { lairs: "yes" } })).toThrow();
+    expect(() => validateCharacter({ ...blankCharacter(), class: "constable", expansions: { lairs: true } })).not.toThrow();
+  });
+  it("a flag is never on while its book is locked; a constable falls back to the adventurer ladder while Lairs is locked", async () => {
+    const { blankCharacter, hasExpansion, levelOf, levelTitle } = await import("../src/tools/sheet");
+    const c = { ...blankCharacter(), class: "constable" as const, expansions: { lairs: true } };
+    expect(hasExpansion(c, "lairs")).toBe(false);
+    expect(levelOf(500, "constable")).toBe(levelOf(500));
+    expect(levelTitle(c, 1)).toBe("Raw");
+  });
+});
+
+describe("animal companion card", () => {
+  it("shares up to half the damage and never kills the companion", async () => {
+    const { shareDamage } = await import("../src/tools/sheet");
+    expect(shareDamage(10, 20)).toEqual({ you: 5, companion: 5 });
+    expect(shareDamage(11, 20)).toEqual({ you: 6, companion: 5 });
+    expect(shareDamage(10, 3)).toEqual({ you: 8, companion: 2 });
+    expect(shareDamage(10, 1)).toEqual({ you: 10, companion: 0 });
+    expect(shareDamage(-4, 9)).toEqual({ you: 0, companion: 0 });
+  });
+  it("validates a companion sheet and rejects bad shapes", async () => {
+    const { blankCharacter, validateCharacter } = await import("../src/tools/sheet");
+    expect(() => validateCharacter({ ...blankCharacter(), companion: { name: "Rex", a1desc: "x" } })).not.toThrow();
+    expect(() => validateCharacter({ ...blankCharacter(), companion: { name: 5 } })).toThrow();
+    expect(() => validateCharacter({ ...blankCharacter(), companion: { "bad key": "x" } })).toThrow();
   });
 });

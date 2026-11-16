@@ -3,7 +3,7 @@
 // text is generated at display time from each entry's facts (journalprose.ts); the player's edit
 // (`text`, `edited`) and own words (`addition`) are kept whatever updates arrive. DOM-free.
 import { gk } from "../games";
-import { isDoor, type ExitType, type Side } from "../tools/dmap";
+import { EXIT_TYPE_LIST, isDoor, type ExitType, type Side } from "../tools/dmap";
 import type { JournalDoorEvent, JournalFightEvent, JournalMilestoneEvent, JournalRealmEvent, JournalRoomEvent } from "./events";
 import { roomExits, sliceMap, type MapSnap } from "./journalsnap";
 
@@ -70,7 +70,7 @@ const str = (v: unknown): v is string => typeof v === "string";
 const optStr = (v: unknown) => v === undefined || str(v);
 const strs = (v: unknown): v is string[] => Array.isArray(v) && v.every(str);
 const SIDES = new Set(["N", "E", "S", "W"]);
-const EXIT_TYPES = new Set(["archway", "wooden", "metal", "reinforced", "portcullis", "curtain", "slab", "unknown"]);
+const EXIT_TYPES = new Set<string>(EXIT_TYPE_LIST);
 const ROOM_KINDS = new Set(["entrance", "corridor", "small", "regular", "large"]);
 const exitOk = (x: unknown) => isObj(x) && SIDES.has(x.side as string) && EXIT_TYPES.has(x.type as string);
 const doorOk = (x: unknown) => isObj(x) && exitOk(x) && ["door", "pick", "portcullis", "slab"].includes(x.check as string) && typeof x.ok === "boolean" && optStr(x.detail);

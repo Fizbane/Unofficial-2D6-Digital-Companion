@@ -1,13 +1,5 @@
 // Bootstrap: load the content gateway and the library on it (which indexes the tables), then build
 // the shell (or the bare map window).
-import "@fontsource/cormorant-garamond/500.css";
-import "@fontsource/cormorant-garamond/600.css";
-import "@fontsource/crimson-pro/400.css";
-import "@fontsource/crimson-pro/400-italic.css";
-import "@fontsource/crimson-pro/600.css";
-import "@fontsource/inter/400.css";
-import "@fontsource/inter/500.css";
-import "@fontsource/inter/600.css";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
@@ -17,6 +9,8 @@ import "./styles/tools.css";
 import "./styles/dungeon.css";
 import "./styles/combat.css";
 import "./styles/sheet.css";
+import "./styles/dsheet.css";
+import "./styles/creator.css";
 import "./styles/vsheet.css";
 import "./styles/vcombat.css";
 import "./styles/realm.css";
@@ -26,12 +20,14 @@ import { loadLibrary } from "./library";
 import { html, setHTML, type Raw } from "./ui/html";
 import { applyDisplay } from "./settings";
 import { preload as preloadDice } from "./dice3d";
-import { bareContext, buildShell } from "./shell/shell";
+import { bareContext, buildShell, toast } from "./shell/shell";
 import { initAudio } from "./audio/wire";
 import { isVoid, markDocument, switchGame } from "./games";
 import { runFirstVisit } from "./ui/firstrun";
 import { startAutoBackup } from "./shell/autobackup";
+import { initArt } from "./ui/art";
 import { startUpdateCheck } from "./ui/updateui";
+import { resumeTutorial } from "./tutorial/run";
 
 export type { ToolContext } from "./shell/shell";
 
@@ -48,11 +44,13 @@ loadLibrary()
       return;
     }
     preloadDice();
-    buildShell(app);
+    const tabs = buildShell(app);
     initAudio();
     startAutoBackup();
     startUpdateCheck();
     runFirstVisit();
+    void initArt();
+    resumeTutorial({ openTab: (route, opts) => tabs.open(route, opts), toast });
   })
   .catch((err) => {
     setHTML(app, html`<div class="boot-error"><h1>Couldn't load the library</h1><p>Run <code>.venv\\Scripts\\python pipeline\\build.py</code> first.</p>${switchBack()}<pre>${String(err)}</pre></div>`);

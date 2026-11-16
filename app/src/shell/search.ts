@@ -6,7 +6,7 @@ import { books, byId, searchLibrary, snippet } from "../library";
 import { codeTarget, getContent, onContentChange } from "../content";
 import { lockedLabel } from "../ui/locked";
 import { isTypingTarget } from "./overlays";
-import { isCreatureTable, PLAY_TOOLS } from "../tools/common";
+import { availableTools, isCreatureTable } from "../tools/common";
 import { icon, type IconName } from "../ui/icon";
 import { html, setHTML, type Raw } from "../ui/html";
 
@@ -16,8 +16,8 @@ export interface Search {
   isOpen(): boolean;
 }
 
-const TOOLS: { id: string; title: string; blurb: string; icon: IconName }[] = [
-  ...PLAY_TOOLS,
+const TOOLS = (): { id: string; title: string; blurb: string; icon: IconName }[] => [
+  ...availableTools(),
   { id: "settings", title: "Settings", blurb: "Dice, display and backups.", icon: "settings" },
 ];
 const PLACEHOLDER = "Search everything… (try a table code like ENAT1)";
@@ -92,7 +92,7 @@ export function initSearch(host: HTMLElement, openRoute: (route: string, opts?: 
     }
     {
       const low = q.toLowerCase();
-      const tools = TOOLS.filter((t) => t.title.toLowerCase().includes(low)).map(
+      const tools = TOOLS().filter((t) => t.title.toLowerCase().includes(low)).map(
         (t) => html`<a href="#/play/${t.id}">${icon(t.icon, { size: 16 })}<span class="sr-body">
         <strong>${markMatches(t.title, q)}</strong> <span class="muted">${t.id === "settings" ? "Settings" : "Play tool"}</span><span class="snip">${t.blurb}</span></span></a>`,
       );

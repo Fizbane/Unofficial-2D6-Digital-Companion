@@ -1,21 +1,33 @@
 // 2D6 Void's character-bar chips (bottombar.ts draws these instead of Dungeon's in Void mode):
-// name with portrait, HP bar, XP, Marksmanship, and Bloodied / Stunned when ticked. Every chip
-// opens the Void character sheet (data-vchip).
+// name with portrait, HP bar, XP, Marksmanship, and Bloodied / Stunned when ticked. The name chip
+// opens the survivor flyout; the others open a quick-edit popover (charbar-pop.ts, data-pop).
 import { button, chip, statBlock } from "../ui/components";
 import { html, type Raw } from "../ui/html";
 import { portrait } from "./panels/charcard";
 import { signed, stepHp, xpPct } from "./charmodel";
 import { hasVChar, loadVChar, saveVChar, vstats, type VStats, type VoidCharacter } from "../tools/void/sheetmodel";
 
-export function voidChips(): Raw {
+/** The Void bar chips in two groups: the player (name chip) and the stats; bottombar.ts places each. */
+export function voidChipParts(): { player: Raw; stats: Raw } {
   if (!hasVChar())
-    return html`<button type="button" class="chip strip-name" data-vchip data-hp-chip title="Create your survivor">${portrait({ name: "", portrait: "" }, "sm")}<span class="chip-label">New survivor</span></button>`;
+    // no survivor yet: still the name chip, so hovering shows the flyout (voidCard's empty card), as in Dungeon;
+    // data-hp-chip keeps it on narrow screens, where the bar shows only that chip
+    return { player: html`<button type="button" class="chip strip-name" data-name-chip data-vchip data-hp-chip aria-haspopup="dialog" aria-expanded="false" title="Create your survivor">${portrait({ name: "", portrait: "" }, "sm")}<span class="chip-label">New survivor</span></button>`, stats: html`` };
   const c = loadVChar();
   const s = vstats(c);
   const pct = Math.max(0, Math.min(100, (c.hp / s.baseline) * 100)) || 0;
   const cond = (n: number, label: string, max = 8) =>
-    n > 0 ? chip(label, { value: `${Math.min(max, n)}/${max}`, attrs: html`data-vchip title="${label}: open the sheet"${n >= max ? html` data-full=""` : ""}` }) : "";
-  return html`<button type="button" class="chip strip-name" data-name-chip data-vchip aria-haspopup="dialog" aria-expanded="false" title="Survivor">${portrait(c, "sm")}<span class="chip-label">${c.name || "Survivor"} · Lv ${s.level}</span></button><button type="button" class="chip strip-hp" data-vchip data-hp-chip title="HP: open the sheet"><span class="chip-label">HP</span><span class="strip-hp-bar" aria-hidden="true"><span style="width:${pct}%"></span></span><span class="chip-value">${c.hp}/${s.baseline}</span></button>${cond(c.bloodied, "Bloodied")}${cond(c.stunned, "Stunned")}${chip("XP", { value: String(c.xp), attrs: html`data-vchip title="XP: open the sheet"` })}${chip("Marks", { value: String(s.marksmanship), attrs: html`data-vchip title="Marksmanship ${s.marksmanship} · ranged hits ${c.rangedHits}/10"` })}`;
+    n > 0 ? chip(label, { value: `${Math.min(max, n)}/${max}`, attrs: html`data-pop="${label.toLowerCase()}" aria-haspopup="dialog" title="Change ${label}"${n >= max ? html` data-full=""` : ""}` }) : "";
+  return {
+    player: html`<button type="button" class="chip strip-name" data-name-chip data-vchip aria-haspopup="dialog" aria-expanded="false" title="Survivor">${portrait(c, "sm")}<span class="chip-label">${c.name || "Survivor"} · Lv ${s.level}</span></button>`,
+    stats: html`<button type="button" class="chip strip-hp" data-pop="hp" data-hp-chip aria-haspopup="dialog" title="Change HP"><span class="chip-label">HP</span><span class="strip-hp-bar" aria-hidden="true"><span style="width:${pct}%"></span></span><span class="chip-value">${c.hp}/${s.baseline}</span></button>${cond(c.bloodied, "Bloodied")}${cond(c.stunned, "Stunned")}${chip("XP", { value: String(c.xp), attrs: html`data-pop="xp" aria-haspopup="dialog" title="Change XP or add XP from a source"` })}${chip("Marks", { value: String(s.marksmanship), attrs: html`data-pop="marks" aria-haspopup="dialog" title="Marksmanship ${s.marksmanship} · ranged hits ${c.rangedHits}/10: tick a hit"` })}${chip("Rations", { value: String(c.rations), attrs: html`data-pop="rations" aria-haspopup="dialog" title="Change rations"` })}`,
+  };
+}
+
+/** Both groups' chips together. */
+export function voidChips(): Raw {
+  const p = voidChipParts();
+  return html`${p.player}${p.stats}`;
 }
 
 /** The compact survivor card for the name-chip flyout (the Void counterpart of panels/charcard.ts). */
@@ -70,8 +82,13 @@ export function wireVoidCharCard(root: HTMLElement, openSheet: () => void): void
 }
 
 /** The flyout's card for the current survivor, or null when none is saved yet. */
+/** The flyout's card: the survivor's, or (none made yet) a prompt to create one on the sheet. */
 export function voidCard(): Raw | null {
-  if (!hasVChar()) return null;
+  if (!hasVChar())
+    return html`<header class="char-head">${portrait({ name: "", portrait: "" }, "lg")}<div class="char-head-text">
+      <h2 class="char-name">New survivor</h2><span class="char-level">Not created yet</span></div></header>
+    <div class="char-body"><p class="muted">Pick a name, profession, weapon and armour on the character sheet to start.</p>
+      <div class="step-actions">${button("Create your survivor", { icon: "scroll", variant: "primary", size: "sm", attrs: html`data-open-sheet` })}</div></div>`;
   const c = loadVChar();
   return voidCharCard(c, vstats(c));
 }

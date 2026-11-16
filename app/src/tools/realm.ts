@@ -15,6 +15,7 @@ import { loadChar, saveChar, stats } from "./sheet";
 import { STRINGS, blocked, landColor, mapLegendHtml, placeArea, placeString, renderRealmMap, type Cell, type PlotLike } from "./rmap";
 import { d6 } from "../dice";
 import { plainText } from "../shell/journalprose";
+import { askNumber } from "../ui/ask";
 import { html, joinHtml, type Raw, setHTML } from "../ui/html";
 import { arr, bool, jsonValue, num as vnum, obj, opt, orNull, rec, str as vstr, tuple, type V } from "../lock/validate";
 
@@ -203,9 +204,21 @@ export function startBuilding(s: State, c: BCard, plot: string, cost: number): B
     land.bp -= c.size;
     land.rankMod += c.rank;
   }
-  const b: Bldg = { id: s.nextId++, plot, type: c.name, level: 1, hp: 1, workers: Math.min(needs, Math.max(0, free)), unrest: 0, note: "", maxHp: c.hp, needWorkers: needs };
+  const b: Bldg = { id: s.nextId++, plot, type: c.name, level: 1, hp: 1, workers: Math.min(needs, Math.max(0, free)), unrest: 0, note: "", maxHp: c.hp, needWorkers: needs, ...(land ? { usedBp: c.size, rankAdd: c.rank } : {}) };
   s.buildings.push(b);
   return b;
+}
+
+/** Remove a building; its plot gets back the Building Points and rank it took (buildings started from a card). The gold is not refunded. */
+export function removeBuilding(s: State, id: number): void {
+  const b = s.buildings.find((x) => x.id === id);
+  if (!b) return;
+  const land = s.lands.find((l) => l.tag === b.plot);
+  if (land) {
+    land.bp += b.usedBp ?? 0;
+    land.rankMod -= b.rankAdd ?? 0;
+  }
+  s.buildings = s.buildings.filter((x) => x.id !== id);
 }
 
 /** Add a building entered by hand. Returns what's wrong, or null once it is added. */
@@ -228,7 +241,9 @@ export function ownerLockedHtml(e: { owner?: string; claim?: boolean }): Raw | "
 // ---------- state ----------
 export interface Land { id: number; tag: string; land: string; base: string; size: number; rank: number; rankMod: number; details: string; bp: number; claimed: boolean; owner: string; cells?: Cell[] }
 /** A building in the register. `maxHp` and `needWorkers` are set for one entered by hand (no card). */
-export interface Bldg { id: number; plot: string; type: string; level: number; hp: number; workers: number; unrest: number; note: string; maxHp?: number; needWorkers?: number }
+export interface Bldg { id: number; plot: string; type: string; level: number; hp: number; workers: number; unrest: number; note: string; maxHp?: number; needWorkers?: number;
+  /** What starting it took from its plot (Building Points) and added to the plot's rank: given back when it is removed. */
+  usedBp?: number; rankAdd?: number }
 /**
  * A table roll as it is kept in the saved state: data, never markup (a saved state can come from an
  * imported backup). Drawn by rollNoteHtml. `rows` is null when no row matched.
@@ -302,7 +317,7 @@ const landShape = obj<Land>({
   cells: opt(arr(tuple<Cell>(rn, rn), 2000)),
 }, KEEP);
 const bldgShape = obj<Bldg>({
-  id: rn, plot: vstr(200), type: vstr(200), level: rn, hp: rn, workers: rn, unrest: rn, note: rtext, maxHp: opt(rn), needWorkers: opt(rn),
+  id: rn, plot: vstr(200), type: vstr(200), level: rn, hp: rn, workers: rn, unrest: rn, note: rtext, maxHp: opt(rn), needWorkers: opt(rn), usedBp: opt(rn), rankAdd: opt(rn),
 }, KEEP);
 const realmShape = obj<Partial<State>>(
   {
@@ -341,6 +356,31 @@ export const freshRealm = (): State => fresh();
 // ---------- derived values ----------
 const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 const taxOf = (l: Land) => l.size * l.rank + l.rankMod;
+
+/**
+ * Pay `tax` SC from a treasury: silver first, then gold broken into silver, then copper (10 CC = 1 SC,
+ * 10 SC = 1 GC). Returns the treasury afterwards, or null when it can't cover the tax (nothing is taken).
+ */
+export function payTax(t: { gc: number; sc: number; cc: number }, tax: number): { gc: number; sc: number; cc: number } | null {
+  let { gc, sc, cc } = t;
+  let need = Math.max(0, tax);
+  const fromSc = Math.min(Math.max(0, sc), need);
+  sc -= fromSc;
+  need -= fromSc;
+  if (need > 0) {
+    const gold = Math.min(Math.max(0, gc), Math.ceil(need / 10));
+    gc -= gold;
+    const got = gold * 10;
+    sc += Math.max(0, got - need); // change from the last gold coin
+    need = Math.max(0, need - got);
+  }
+  if (need > 0) {
+    const copper = need * 10;
+    if (cc < copper) return null;
+    cc -= copper;
+  }
+  return { gc, sc, cc };
+}
 
 /** "rank 2", "rank 2 +1", "rank 2 −1". */
 export const rankText = (rank: number, mod: number) => `rank ${rank}${mod > 0 ? ` +${mod}` : mod < 0 ? ` −${-mod}` : ""}`;
@@ -392,6 +432,8 @@ function title(s: State) {
   return n >= 121 ? "Lord / Lady / Lordain" : n >= 41 ? "Dignitary" : "Governor";
 }
 const fpMax = (s: State) => Math.max(0, 6 - s.corruption);
+/** Kaladear favour that counts: corruption crosses boxes out from the top, ticked or not. */
+export const kaladearFp = (s: { kaladear: number; corruption: number }) => Math.max(0, Math.min(s.kaladear, 6 - s.corruption));
 
 // ---------- render ----------
 export function render(root: HTMLElement, ctx: ToolContext) {
@@ -438,7 +480,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     const wk = workersAvailable(s);
     setHTML(root, html`
       <header class="play-head">
-        <div class="play-title">${eyebrow(`Play · Year ${s.year} · Month ${s.month}`)}<h1>${icon("castle", { size: 26 })}<span>Realm</span></h1></div>
+        <div class="play-title">${eyebrow(`Year ${s.year} · Month ${s.month}`)}<h1>${icon("castle", { size: 26 })}<span>Realm</span></h1></div>
         <div class="play-actions">
           ${button("Export", { icon: "download", variant: "ghost", attrs: html`data-act="export"` })}
           ${button("Import", { icon: "upload", variant: "ghost", attrs: html`data-act="import"` })}
@@ -654,7 +696,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       ${cardBox(
         html`<div class="boxes">${Array.from({ length: 6 }, (_, i) => html`<label title="${i >= fpMax(s) ? "crossed out by corruption" : ""}"><input type="checkbox" data-kfp="${i + 1}" ${s.kaladear > i ? "checked" : ""} ${i >= fpMax(s) ? "disabled" : ""} aria-label="Kaladear favour ${i + 1}"></label>`)}</div>
         <div class="grid">${stepper("corruption", s.corruption, { label: "Corruption", min: 0, max: 10 })}</div>
-        <div class="step-actions">${button("Ask Kaladear for favour (D6 ≤ FP)", { icon: "sparkles", variant: "primary", attrs: html`data-act="kcall" ${s.kaladear ? "" : "disabled"}` })}</div>
+        <div class="step-actions">${button("Ask Kaladear for favour (D6 ≤ FP)", { icon: "sparkles", variant: "primary", attrs: html`data-act="kcall" ${kaladearFp(s) ? "" : "disabled"}` })}</div>
         ${s.corruption >= 6 ? html`<p class="warn">${icon("triangle-alert", { size: 15 })} Corruption ${s.corruption}: you can't call on Kaladear and temples crumble.</p>` : ""}`,
         { eyebrow: "Favour", title: "Kaladear" },
       )}
@@ -752,8 +794,14 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     } else if (el.dataset.temp) {
       const t = s.temp[+el.dataset.temp];
       (t as any)[el.dataset.f!] = el.type === "number" ? parseInt(el.value, 10) || 0 : el.value;
-    } else if (el.name && el.type === "number") (s as any)[el.name] = parseInt(el.value, 10) || 0;
-    else if (el.id === "nb-type") return showNewBuilding();
+    } else if (el.name && el.type === "number") {
+      (s as any)[el.name] = parseInt(el.value, 10) || 0;
+      if (el.name === "corruption" && !ev.isTrusted) {
+        // the ± buttons: the favour boxes it crosses out and the Ask button follow at once
+        persist();
+        return draw();
+      }
+    } else if (el.id === "nb-type") return showNewBuilding();
     persist();
   });
   root.addEventListener("change", (ev) => {
@@ -838,7 +886,8 @@ export function render(root: HTMLElement, ctx: ToolContext) {
             return draw();
           }
           const ref = refOf(TBL.inquiry);
-          const mod = parseInt(prompt("Land inquiry modifiers (bribes +1 per 20 GC up to +3, titles, gifts −1, threats +1, repeat −1). Total:", "0") || "0", 10) || 0;
+          const mod = await askNumber("Land inquiry modifiers (bribes +1 per 20 GC up to +3, titles, gifts −1, threats +1, repeat −1). Total:", 0);
+          if (mod === null) return; // cancelled: no fee, no roll
           s.gc -= 10;
           note("Visited the High Actuary (10 GC fee)");
           if (ref) await rollAndLog(ref, mod, undefined, "High Actuary");
@@ -904,16 +953,16 @@ export function render(root: HTMLElement, ctx: ToolContext) {
           note(`Collected income ${gc} GC ${sc ? sc + " SC" : ""}`);
         } else if (k === "tax") {
           const tax = s.lands.filter((l) => l.claimed).reduce((n, l) => n + taxOf(l), 0);
-          // pay in SC, breaking gold if needed
-          let need = tax;
-          const fromSc = Math.min(s.sc, need);
-          s.sc -= fromSc;
-          need -= fromSc;
-          if (need > 0) {
-            const gold = Math.ceil(need / 10);
-            s.gc -= gold;
-            s.sc += gold * 10 - need;
+          // pay in SC, breaking gold (then copper) if needed; never into debt
+          const paid = payTax(s, tax);
+          if (!paid) {
+            note(`Couldn't pay ${tax} SC tax`);
+            persist();
+            draw();
+            ctx.toast(`The treasury can't cover ${tax} SC. Paying taxes: next month you owe both months' silver plus 1 GC; add it to the treasury by hand when you pay.`);
+            return;
           }
+          Object.assign(s, paid);
           note(`Paid ${tax} SC tax`);
         } else if (k === "health") {
           const c = loadChar();
@@ -1060,7 +1109,8 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         const wk = workersAvailable(s);
         const needs = ["House", "Manor", "Shrine", "Well"].some((k) => isType({ type }, k)) ? 0 : c.workers;
         if (needs > wk.free && !confirm(`Only ${wk.free} free workers but ${type} needs ${needs}. Start anyway?`)) return;
-        const cost = parseInt(prompt(`Cost in GC (card: ${c.cost}; adjust for base land and discounts):`, String(c.cost)) || String(c.cost), 10) || c.cost;
+        const cost = await askNumber(`Cost in GC (card: ${c.cost}; adjust for base land and discounts):`, c.cost);
+        if (cost === null) return; // cancelled: nothing is built
         startBuilding(s, c, plot, cost);
         note(`Started a ${type} on ${plot} (${cost} GC)`);
         bus.emit("realm:building", { type });
@@ -1069,7 +1119,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         showNewBuilding();
       } else if (b.dataset.delb) {
         if (confirm("Remove this building?")) {
-          s.buildings = s.buildings.filter((x) => x.id !== +b.dataset.delb!);
+          removeBuilding(s, +b.dataset.delb!);
           persist();
           draw();
           showNewBuilding();
@@ -1100,8 +1150,10 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         draw();
       } else if (act === "kcall") {
         const r = await rollDice("D6");
-        const ok = r.value <= s.kaladear;
-        ctx.toast(`Kaladear: rolled ${r.value} against ${s.kaladear} FP. ${ok ? "Favour granted!" : "No answer."}`);
+        const fp = kaladearFp(s);
+        if (!fp) return;
+        const ok = r.value <= fp;
+        ctx.toast(`Kaladear: rolled ${r.value} against ${fp} FP. ${ok ? "Favour granted!" : "No answer."}`);
         note(`Called on Kaladear: ${ok ? "granted" : "no answer"}`);
         persist();
       } else if (act === "from-char") {

@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LockedDuringImport, addUnlocked, bookInfo, codeTarget, getContent, initContent, isLocked, lockGeneration, refreshFixes, storeAvailable, lockAll, manifest, onContentChange, sectionIds } from "../src/content";
+import { LockedDuringImport, addUnlocked, bookInfo, bookLabel, hasFreeEdition, codeTarget, getContent, initContent, isLocked, lockGeneration, refreshFixes, storeAvailable, lockAll, manifest, onContentChange, sectionIds } from "../src/content";
 import { undoFixes } from "../src/fixes";
 import { validateManifest } from "../src/lock/manifest";
 import { StoreError, forgetAll, getBooks, getPage, getProgress, getSections, persist, putBook, putPage, putProgress, putSections } from "../src/lock/store";
@@ -47,11 +47,18 @@ beforeEach(async () => {
 });
 
 describe("content gateway", () => {
+  it("names the Codex \"Codex Free\" until the full book is unlocked", () => {
+    expect(hasFreeEdition("codex")).toBe(true);
+    expect(hasFreeEdition("core")).toBe(false);
+    expect(bookLabel("codex")).toBe("Codex Free");
+    expect(bookLabel("core")).toBe("Core Rules");
+  });
+
   it("returns a locked result for a locked section", () => {
-    expect(getContent("codex/p52-1")).toEqual({ ok: false, locked: { book: "codex", bookName: "Tables Codex", page: 52 } });
+    expect(getContent("codex/p52-1")).toEqual({ ok: false, locked: { book: "codex", bookName: "Codex Full", page: 52 } });
     expect(isLocked("codex/p52-1")).toBe(true);
     expect(sectionIds()).toEqual(["core-intro"]);
-    expect(bookInfo("codex")).toEqual({ slug: "codex", name: "Tables Codex", free: false, unlocked: false });
+    expect(bookInfo("codex")).toEqual({ slug: "codex", name: "Codex Full", free: false, unlocked: false });
     expect(bookInfo("core")).toEqual({ slug: "core", name: "Core Rules", free: true, unlocked: false });
     expect(manifest().books).toHaveLength(2);
   });

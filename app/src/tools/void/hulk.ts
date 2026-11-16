@@ -22,9 +22,16 @@ import { bus, type JournalDoorEvent, type JournalRoomEvent } from "../../shell/e
 import { makeArrangeable } from "../../shell/arrange";
 import { readState, writeState } from "../../shell/state";
 import { rollAndLog } from "../../shell/panels/results";
+import { applyCondition, conditionLabel, conditionsIn, type ConditionKind } from "./conditiontext";
+import { lootIn } from "../gear";
+import { addLoot } from "../loot";
+import { revertAuto, type AutoLog } from "../autoapply";
+import { portrait } from "../../shell/panels/charcard";
+import { voidCard, wireVoidCharCard } from "../../shell/vcharbar";
+import { watchPortraits } from "../../shell/portraitcard";
 import { button, card, chip, eyebrow } from "../../ui/components";
 import { icon } from "../../ui/icon";
-import { isCreatureTable, load, save } from "../common";
+import { isCreatureTable, load, playKey, save, gated, overrideOf, resetEncounter, undoTurnWarning } from "../common";
 import { html, joinHtml, setHTML, type HtmlValue, type Raw } from "../../ui/html";
 import { plainText } from "../../shell/journalprose";
 import { addRoom, findPlacement, mapHint, mergePanelEdits, nextExit, openExits, type DungeonMap, type ExitType, type MapExit, type MapRoom, type Side } from "../dmap";
@@ -32,7 +39,7 @@ import { mountHulkMap, type HulkMapView } from "./mappage";
 import { applyDamage, bloody, camoRest, eatBetweenLevels, enterRoom as charEnterRoom, hasVChar, loadVChar, restBetweenLevels as charRest, saveVChar, startHulkLevel, vstats, type VoidCharacter } from "./sheetmodel";
 import {
   L10_CHAIN, L10_SPECIAL, LEVELS, LEVEL_TABLES, SLDT1, FAST1, VOET1, VOID_EXIT_NAME, addSecretDoor, aliensIn, alarmCheck, barrierDice, bestSingleExit, bioLimb, camoUses, classifyDrawn,
-  exitCount, exitTypeFor, exploredPct, forceSliding, hackSecurity, hasAlarmChecks, identityTable, isLocked, isVoidDoor, ladderCell, needsSecondRoll, nextLevel, patrolTable, placeHulkExits,
+  exitCount, exitTypeFor, exploredPct, voidCurStep, voidFinishBlock, forceSliding, hackSecurity, hasAlarmChecks, identityTable, isLocked, isVoidDoor, ladderCell, needsSecondRoll, nextLevel, patrolTable, placeHulkExits,
   resolveDimensions, secretDoorAllowed, setupLevel, specialUniques, tableCodesIn, uniqueRule, uniqueVerdict, type HulkKind, type Pair, type Ration,
 } from "./hulkmodel";
 
@@ -67,6 +74,10 @@ interface Draft {
   via?: number;
   chain?: number; // L10: index into L10_CHAIN
   trackers?: string;
+  auto?: AutoLog; // what this room's rolls put on the survivor by themselves (taken back on Undo turn or a re-roll)
+  encDone?: boolean; // the encounter is dealt with
+  fought?: boolean; // a Fight button was pressed for this room
+  byBook?: { type?: boolean }; // the room type was rolled in the printed book (no table to roll here)
 }
 interface DoneRoom { n: number; kind: HulkKind; w: number; h: number; type: string; unique: boolean; mapRoom?: number }
 interface Door { checked?: boolean; locked?: boolean; open?: boolean; attempts?: number; lockedOut?: boolean; crossed?: boolean; pinned?: boolean; note?: Note; html?: string }
@@ -79,6 +90,8 @@ interface State {
   prevLadder: { x: number; y: number } | null; // the last level's down-ladder square
   voidChamber: number | null;
   portals: { n: number; room: number }[];
+  /** The exit whose room was entered (trackers ticked) and then discarded: rolling that room again is the same step, not a new one. */
+  entered?: number;
   chain: number; // L10: next chain room
   camo: number; // Camo Tent uses this level
   doors: Record<string, Door>; // by map exit id
@@ -92,7 +105,7 @@ interface State {
 /** A step of the room: name, title, done, body. */
 type Step = [string, string, boolean, Raw];
 
-const blank = (): State => ({ level: 1, rooms: [], current: null, map: undefined, ladderIn: null, prevLadder: null, voidChamber: null, portals: [], chain: 0, camo: 0, doors: {}, stats: {}, loose: [] });
+const blank = (): State => ({ level: 1, rooms: [], current: null, map: undefined, ladderIn: null, prevLadder: null, voidChamber: null, portals: [], chain: 0, camo: 0, doors: {}, stats: {}, loose: [], victory: false, rest: undefined, setupNote: undefined });
 const KIND_LABEL: Record<HulkKind, string> = { entrance: "Entrance room", corridor: "Corridor", small: "Small room", regular: "Room", large: "Large room" };
 const SIDE_LABEL: Record<Side, string> = { N: "north", E: "east", S: "south", W: "west" };
 const MAP_UI_KEY = "2d6:shell:vhulkMap";
@@ -109,10 +122,10 @@ const strs = (v: unknown): string[] => (Array.isArray(v) ? v.map(str) : []);
 
 // ---------- the survivor (sheetmodel.ts), when one is saved ----------
 function sheet() {
-  if (!hasVChar()) return { has: false as const, name: "", hp: undefined, baseline: undefined, level: undefined, tech: undefined, coding: undefined, rations: undefined, bloodied: 0, stunned: 0, tents: 0 };
+  if (!hasVChar()) return { has: false as const, name: "", hp: undefined, baseline: undefined, level: undefined, tech: undefined, coding: undefined, rations: undefined, rationParts: undefined, bloodied: 0, stunned: 0, tents: 0 };
   const c = loadVChar();
   const v = vstats(c);
-  return { has: true as const, name: c.name, hp: c.hp, baseline: v.baseline, level: v.level, tech: v.technical, coding: v.coding, rations: c.rations, bloodied: c.bloodied, stunned: c.stunned, tents: c.tentUses };
+  return { has: true as const, name: c.name, hp: c.hp, baseline: v.baseline, level: v.level, tech: v.technical, coding: v.coding, rations: c.rations, rationParts: c.rationParts, bloodied: c.bloodied, stunned: c.stunned, tents: c.tentUses };
 }
 /** Change the saved survivor (if there is one) and tell the other tools. */
 function withChar<T>(fn: (c: VoidCharacter) => T): T | undefined {
@@ -122,18 +135,54 @@ function withChar<T>(fn: (c: VoidCharacter) => T): T | undefined {
   saveVChar(c, "vhulk");
   return out;
 }
+/**
+ * Apply what a rolled text states outright (Stunned, Bloodied, things you find; not ones that hang on a roll or
+ * a choice) to the survivor, noting each change on the room `d` so Undo turn or a re-roll can take it back.
+ * Returns the messages for a toast.
+ */
+function autoApply(d: { auto?: AutoLog } | null | undefined, text: string): string[] {
+  const hits = conditionsIn(text).filter((h) => h.auto);
+  const found = lootIn(text);
+  if (!hits.length && !found.length) return [];
+  return withChar((c) => {
+    const msgs: string[] = [];
+    for (const h of hits) {
+      const field = h.kind === "stun" || h.kind === "clearStunned" ? "stunned" : "bloodied";
+      const before = c[field];
+      const m = applyCondition(c, h);
+      if (!m) continue;
+      msgs.push(m);
+      if (d) ((d.auto ??= {}).conds ??= []).push({ field, before, after: c[field] });
+    }
+    if (found.length) {
+      addLoot(c, found);
+      msgs.push(`Added to small items: ${found.join(", ")}.`);
+      if (d) ((d.auto ??= {}).loot ??= []).push(...found);
+    }
+    return msgs;
+  }) ?? [];
+}
+/** Take back what `autoApply` put on the survivor for this room; the message, if anything changed. */
+function undoAuto(d: { auto?: AutoLog } | null | undefined): string | null {
+  if (!d?.auto) return null;
+  const log = d.auto;
+  delete d.auto;
+  const back = withChar((c) => revertAuto(c, log)) ?? [];
+  return back.length ? `Taken back off your sheet: ${back.join("; ")}.` : null;
+}
 
 /**
  * Lay the page out as the live map beside (wide) or above (narrow, collapsible) the steps, with
  * Dungeon turn's layout classes.
  */
-function layout(page: HTMLElement, ctx: ToolContext): { main: HTMLElement; map: HulkMapView } {
+function layout(page: HTMLElement, ctx: ToolContext): { main: HTMLElement; status: HTMLElement; map: HulkMapView } {
   page.classList.add("play-page", "page-wide", "dturn-page", "vhulk-page");
   let collapsed = readState(MAP_UI_KEY, isMapUi, () => ({ collapsed: matchMedia("(max-width: 899px)").matches })).collapsed;
   setHTML(page, html`<div class="dturn vhulk"><div class="dturn-grid">
     <aside class="dturn-map card" aria-label="Dark Hulk map">
       <button type="button" class="dturn-map-toggle" aria-controls="vhulk-map-body">${icon("map", { size: 16 })}<span>Map</span>${icon("chevron-down", { size: 16 })}</button>
       <div class="dturn-map-body" id="vhulk-map-body"></div>
+      <div class="dturn-status"></div>
     </aside>
     <div class="dturn-main"></div>
   </div></div>`);
@@ -151,7 +200,7 @@ function layout(page: HTMLElement, ctx: ToolContext): { main: HTMLElement; map: 
   });
   paint();
   const map = mountHulkMap(aside.querySelector<HTMLElement>(".dturn-map-body")!, { source: "vhulk-map", embedded: true, openTab: ctx.openTab, toast: ctx.toast, onDispose: ctx.onDispose });
-  return { main: page.querySelector<HTMLElement>(".dturn-main")!, map };
+  return { main: page.querySelector<HTMLElement>(".dturn-main")!, status: aside.querySelector<HTMLElement>(".dturn-status")!, map };
 }
 
 export function render(page: HTMLElement, ctx: ToolContext) {
@@ -160,7 +209,13 @@ export function render(page: HTMLElement, ctx: ToolContext) {
   st.portals ??= [];
   st.stats ??= {};
   st.loose ??= [];
-  const { main: root, map: mapView } = layout(page, ctx);
+  const { main: root, status, map: mapView } = layout(page, ctx);
+  // hover the portrait in the strip: the survivor's card, as the name chip shows it
+  watchPortraits({
+    content: () => voidCard(),
+    wire: (el) => wireVoidCharCard(el, () => ctx.openTab("#/play/sheet")),
+    onDispose: ctx.onDispose,
+  });
   let live = true;
   ctx.onDispose(() => (live = false));
   const persist = () => {
@@ -195,14 +250,17 @@ export function render(page: HTMLElement, ctx: ToolContext) {
   const tableLabel = (ref: TableRef) => ref.table.code ?? ref.title.replace(/\s*-\s*THE DARK HULK.*$/i, "").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
   /** Buttons for the tables a text says to roll, and Fight buttons for the aliens it names (but not `skip`). */
-  const textActions = (text: string, special = "", skip: string[] = []) => {
+  const textActions = (text: string, special = "", skip: string[] = [], lead = false, leadTable = false) => {
     const codes = tableCodesIn(text, (c) => !!tableByCode(c), patrolRef()?.table.code ?? null);
-    const tables = codes.map((c) => button(`${c.code}${c.modifier ? (c.modifier > 0 ? ` +${c.modifier}` : ` ${c.modifier}`) : ""}`, { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-follow="${c.code}|${c.modifier}"` }));
-    const fights = aliensIn(text, cardNames).filter((n) => !skip.includes(n)).map((n) => fightButton(n, special));
-    return html`${fights}${tables}`;
+    const tables = codes.map((c, i) => button(`${c.code}${c.modifier ? (c.modifier > 0 ? ` +${c.modifier}` : ` ${c.modifier}`) : ""}`, { icon: "dice", size: "sm", variant: leadTable && i === 0 ? "primary" : "ghost", attrs: html`data-follow="${c.code}|${c.modifier}"` }));
+    const fights = aliensIn(text, cardNames).filter((n) => !skip.includes(n)).map((n, i) => fightButton(n, special, lead && i === 0));
+    const conds = hasVChar()
+      ? conditionsIn(text).filter((h) => !h.auto).map((h) => button(conditionLabel(h), { size: "sm", variant: "ghost", attrs: html`data-cond="${h.kind}|${h.n}" title="If the text applies: update your sheet"` }))
+      : [];
+    return html`${fights}${tables}${conds}`;
   };
-  const fightButton = (name: string, special = "") =>
-    button(`⚔ Fight ${name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}`, { size: "sm", variant: "primary", attrs: html`data-fight="${cards.get(name) ?? ""}" data-fight-name="${name}" data-fight-special="${special}"` });
+  const fightButton = (name: string, special = "", lead = false) =>
+    button(`⚔ Fight ${name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}`, { size: "sm", variant: lead ? "primary" : undefined, attrs: html`data-fight="${cards.get(name) ?? ""}" data-fight-name="${name}" data-fight-special="${special}"` });
 
   const stepResult = (body: Raw) => html`<article class="result-card step-result">${body}</article>`;
   const rcHead = (label: string, dice = "") => html`<header class="rc-head">${eyebrow(label)}${dice ? html`<span class="rc-dice">${dice}</span>` : ""}</header>`;
@@ -301,7 +359,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const d = st.doors[e.id] ?? {};
     if (isVoidDoor(e.type)) return !!d.open || (!!d.checked && !d.locked);
     if (e.type === "barrier") return !!d.crossed;
-    return true;
+    return e.type !== "unknown";
   };
 
   let busy = false;
@@ -315,6 +373,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const pstat = (label: string, value: Raw, extra = "") => html`<span class="pstat${extra}">${eyebrow(label)}<span class="pstat-v">${value}</span></span>`;
     const pct = explored();
     const statusBar = html`<section class="card play-status">
+        ${s.has ? portrait({ name: s.name, portrait: loadVChar().portrait }, "lg") : ""}
         ${pstat("Survivor", html`<strong>${s.name || "Survivor"}</strong>${s.level ? html`<span class="muted">· level ${s.level}</span>` : ""}`)}
         ${s.hp !== undefined ? pstat("HP", html`<strong>${s.hp}</strong>${s.baseline ? html`<span class="muted">/ ${s.baseline}</span>` : ""}`) : ""}
         ${s.rations !== undefined ? pstat("Rations", html`<strong>${s.rations}</strong>`) : ""}
@@ -325,7 +384,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
         <a href="#/play/vsheet" class="btn btn-sm btn-ghost pstat-link">${icon("user", { size: 15 })}<span>Sheet</span></a>
       </section>`;
     const head = html`<header class="play-head">
-        <div class="play-title">${eyebrow(`Play · Level ${level} · ${info.name}`)}<h1>${icon("door-closed", { size: 26 })}<span>Hulk turn</span></h1></div>
+        <div class="play-title">${eyebrow(`Level ${level} · ${info.name}`)}<h1>${icon("door-closed", { size: 26 })}<span>Start Game</span></h1></div>
         <div class="play-actions">
           <label class="level-pick"><span class="eyebrow">Level</span>
             <select data-level>${Array.from({ length: 10 }, (_, i) => html`<option ${i + 1 === level ? "selected" : ""}>${i + 1}</option>`)}</select></label>
@@ -342,8 +401,12 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     setHTML(root, html`${head}${statusBar}${body}
       ${st.map && !st.victory ? levelCards() : ""}
       ${st.rooms.length ? card(html`<ol class="room-list">${st.rooms.map((r) => html`<li><span>${r.type || KIND_LABEL[r.kind]}</span> <span class="muted">${r.type ? `${KIND_LABEL[r.kind]} ` : ""}${r.w}×${r.h}${r.unique ? " · unique" : ""}</span></li>`)}</ol>`, { eyebrow: `${st.rooms.length} room${st.rooms.length === 1 ? "" : "s"}`, title: `Rooms on level ${level}` }) : ""}`);
+    // the survivor strip lives under the map, not in the steps' column: move it there
+    const strip = root.querySelector(":scope > .play-status");
+    if (strip) status.replaceChildren(strip);
     if (busy)
       for (const el of root.querySelectorAll<HTMLButtonElement | HTMLSelectElement | HTMLInputElement>("button, select, input")) {
+        if (el.disabled) continue; // drawn disabled on purpose (a used-up tent, a pod not reached): the handler's finally must not enable it
         el.disabled = true;
         el.setAttribute("data-busy", "");
       }
@@ -351,7 +414,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
 
   function startCard(): Raw {
     const info = LEVELS[st.level];
-    const lad = st.level > 1 && st.level < 10 ? (st.prevLadder ? "The up-ladder goes directly below the last level's down-ladder." : "No down-ladder from the level above is known, so you come in mid-south.") : st.level === 10 ? "Level 10's entrance is in the middle of the south wall." : "You climb in at the base of the hull.";
+    const lad = st.level > 1 && st.level < 10 ? (st.prevLadder ? "Put the up-ladder right under where the last level's down-ladder was." : "No down-ladder from the level above is known, so you come in mid-south.") : st.level === 10 ? "Level 10 starts at the centre of the south wall." : "You climb in at the base of the hull.";
     return card(
       html`<p>${info.effects}</p>
       ${info.rules.length ? html`<ul class="vhulk-rules">${info.rules.map((r) => html`<li>${r}</li>`)}</ul>` : ""}
@@ -362,50 +425,62 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     );
   }
 
+  /** A level 9 small room that still has SSRT1 to roll (it resizes the room, so it comes before the exits). */
+  const ssrtPending = (d: Draft) => d.chain === undefined && identityTable(st.level, d.kind).via === "ssrt" && !d.ssrt;
+  /** The step to do next in room d: its main action is the page's one primary button. */
+  const curStep = (d: Draft) => voidCurStep({ kind: d.kind, chain: d.chain !== undefined, hasRoom: !!d.room, exits: d.exits, encDone: d.encDone, byBook: d.byBook, ssrtPending: ssrtPending(d) });
+
   function steps(d: Draft): Raw {
     const level = st.level;
     const list: Step[] = [];
     const chainRoom = d.chain !== undefined ? L10_CHAIN[d.chain] : undefined;
+    const cur = curStep(d);
     if (d.kind === "entrance") {
       const info = LEVELS[level];
       list.push(["Entrance", "Entrance room", true, html`${stepResult(html`${rcHead("Level intro", `${d.w} × ${d.h}`)}<div class="rc-text">${info.effects}</div><div class="rc-actions">${textActions(info.effects)}</div>`)}
-        <p class="muted step-note">No aliens here; the exits are archways.${st.setupNote ? ` ${st.setupNote}` : ""}</p>`]);
+        <p class="muted step-note">No aliens here; the exits are archways.${st.setupNote ? ` ${st.setupNote}` : ""}</p>
+        ${resultsHtml(d.results)}`]);
     } else {
       list.push(["Size", `${KIND_LABEL[d.kind]} ${d.w} × ${d.h}`, true, html`${stepResult(html`${rcHead(chainRoom ? "Level 10 chain" : "Size roll (D66)", `${d.w * d.h} squares`)}<div class="rc-text">${d.dice}</div>${d.trackers ? html`<div class="rc-text muted">${d.trackers}</div>` : ""}`)}
-        ${chainRoom ? "" : html`<div class="step-actions step-kinds"><span class="muted">Squeezed by the map? Change it:</span>
+        ${chainRoom ? "" : html`<details class="step-more"><summary>Doesn't fit as drawn?</summary><div class="step-actions step-kinds"><span class="muted">Squeezed by the map? Change it:</span>
           ${(["corridor", "small", "regular", "large"] as HulkKind[]).filter((k) => k !== d.kind).map((k) => button(KIND_LABEL[k], { size: "sm", attrs: html`data-kind="${k}"` }))}</div>
-          ${ruleNote("small and large use the drawn size: squeezed to one square wide is a corridor, 6 squares or fewer a small room, and a large room squeezed under 32 squares a standard room (U14).")}`}`]);
-      if (d.kind === "corridor") list.push(["Corridor", "Corridor", d.exits !== undefined, html`<p>No room table and no encounter. All exits are archways; the open end can be closed off or used as an exit.</p>`]);
-      else typeStep(d, list);
-      if (!chainRoom) exitsStep(d, list);
-      else if (d.chain! < L10_CHAIN.length - 1) list.push(["Exit", "One archway", true, html`<p>${openExits(M()).some((e) => e.room === d.mapRoom) ? "The one archway exit is on the wall with the most room for the next room of the chain." : "No wall has room for the next room: pick a wall yourself (add a note) or discard and re-place."}</p>`]);
-      if (d.kind !== "corridor") encounterStep(d, list);
+          ${ruleNote("small and large use the drawn size: squeezed to one square wide is a corridor, 6 squares or fewer a small room, and a large room squeezed under 32 squares a standard room (U14).")}</details>`}`]);
+      if (d.kind === "corridor") list.push(["Corridor", "Corridor", d.exits !== undefined, html`<p>No room table and no encounter. All exits are archways; the open end can be closed off or used as an exit.</p>${resultsHtml(d.results)}`]);
+      // the book rolls the exits, then the room type, which sets what kind of exits they are
+      const resizeFirst = ssrtPending(d);
+      if (resizeFirst) typeStep(d, list, cur === "type");
+      if (!chainRoom) exitsStep(d, list, cur === "exits");
+      else if (d.chain! < L10_CHAIN.length - 1) list.push(["Exit", "One archway", true, html`<p>${openExits(M()).some((e) => e.room === d.mapRoom) ? "The one archway exit is on the wall with the most room for the next room of the chain." : "No wall has room for the next room: pick a wall yourself (add a note) or undo the turn and re-place."}</p>`]);
+      if (d.kind !== "corridor") {
+        if (!resizeFirst) typeStep(d, list, cur === "type");
+        encounterStep(d, list, cur === "enc");
+      }
     }
     const mr = mapRoom(d);
     const isLadder = !!mr && st.map?.stairs === mr.id;
-    list.push(["Leave", "The way on", false, html`<p class="muted step-note">Finish the room, then pick an exit on the map. Doors are checked for locks the first time you go through them.</p>
-      <div class="step-actions">${d.kind !== "entrance" ? button(isLadder ? "Remove the down-ladder" : "Last room: put the down-ladder here", { icon: "arrow-down", attrs: html`data-act="ladder"` }) : ""}</div>
-      ${ruleNote(html`the last room going forward gets the down-ladder, usually near the top with about 75% of the level covered. Explored is measured as drawn floor (rooms, exit squares) out of the 476 squares (U19): now <strong>${explored()}%</strong>.`)}`]);
-    const cur = list.findIndex(([, , done]) => !done);
+    const block = voidFinishBlock({ kind: d.kind, chain: !!chainRoom, hasRoom: !!d.room, exits: d.exits, encDone: d.encDone, byBook: d.byBook });
+    const curIdx = list.findIndex(([, , done]) => !done);
     return html`<ol class="steps">${list
-      .map(([name, title, done, body], i) => html`<li class="step card" data-state="${done ? "done" : i === cur ? "current" : "upcoming"}">
+      .map(([name, title, done, body], i) => html`<li class="step card" data-state="${done ? "done" : i === curIdx ? "current" : "upcoming"}" data-coach="step-${name.toLowerCase().replace(/\s+/g, "-")}">
           <span class="step-marker" aria-hidden="true">${done ? icon("check", { size: 15 }) : i + 1}</span>
           <header class="card-head">${eyebrow(`Step ${i + 1} · ${name}`)}<h3 class="card-title">${title}</h3></header>
           <div class="card-body">${body}</div></li>`)
       }</ol>
       <div class="step-actions room-actions">
-        ${button(`Finish room ${d.n}`, { icon: "check", size: "lg", variant: "primary", attrs: html`data-act="finish"` })}
-        ${d.kind !== "entrance" ? button("Discard", { icon: "trash", variant: "ghost", attrs: html`data-act="discard"` }) : ""}
-      </div>`;
+        ${gated(`Finish room ${d.n}`, { icon: "check", size: "lg", variant: cur === "finish" ? "primary" : undefined, attrs: html`data-act="finish"` }, block, "finish")}
+        ${d.kind !== "entrance" ? button("Undo turn", { icon: "rotate-ccw", variant: "ghost", attrs: html`data-act="discard" title="Take this room back off the map. Not in the rules: for fixing a mistake."` }) : ""}
+      </div>
+      ${d.kind !== "entrance" && level !== 10 && (explored() >= 50 || isLadder) ? html`<div class="step-actions" data-coach="ladder-here">${button(isLadder ? "Remove the down-ladder" : "Last room: put the down-ladder here", { icon: "arrow-down", attrs: html`data-act="ladder"` })}</div>
+        ${ruleNote(html`the last room going forward gets the down-ladder, usually near the top with about 75% of the level covered, and never under 50%. Explored is measured as drawn floor (rooms, exit squares) out of the 476 squares (U19): now <strong>${explored()}%</strong>.`)}` : ""}`;
   }
 
-  function typeStep(d: Draft, list: Step[]) {
+  function typeStep(d: Draft, list: Step[], lead: boolean) {
     const level = st.level;
     const chainRoom = d.chain !== undefined ? L10_CHAIN[d.chain] : undefined;
     if (chainRoom?.table === "special") {
       list.push(["Room", chainRoom.label ?? "Special room", !!d.room, html`${d.room ? stepResult(noteHtml(d.room.roll)) : ""}
         <p class="muted step-note">The Level 10 rooms are met in sequence, not rolled.</p>
-        ${d.room ? "" : html`<div class="step-actions">${button(`Read ${chainRoom.label}`, { icon: "book", size: "lg", variant: "primary", attrs: html`data-act="special"` })}</div>`}`]);
+        ${d.room ? "" : html`<div class="step-actions">${button(`Read ${chainRoom.label}`, { icon: "book", size: "lg", variant: lead ? "primary" : undefined, attrs: html`data-act="special"` })}</div>`}`]);
       return;
     }
     const idt = chainRoom ? { sectionId: LEVEL_TABLES[10].sr, via: undefined, note: "" } : identityTable(level, d.kind);
@@ -413,43 +488,61 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const tableId = ssrtPending ? idt.sectionId : idt.via === "ssrt" ? LEVEL_TABLES[9].rooms : idt.sectionId;
     const ref = tableId ? tableAt(tableId) : undefined;
     const pct = uniqueRule(col(d, "UNIQUE")).pct;
-    const boss = d.kind === "regular" || d.kind === "large" ? bosses() : [];
-    list.push(["Room type", "Room type", !!d.room, html`
+    // a boss room can only be the last room once enough of the level is explored for it to appear
+    const boss = d.kind === "regular" || d.kind === "large" ? bosses().filter((b) => explored() >= b.pct) : [];
+    list.push(["Room type", "Room type", !!d.room || !!d.byBook?.type, html`
       ${idt.via === "ssrt" ? html`<p>${idt.note ?? ""}</p>` : ""}${d.ssrt ? stepResult(noteHtml(d.ssrt)) : ""}
       ${d.room ? stepResult(noteHtml(d.room.roll)) : ""}
       ${d.rerolls?.length ? html`<p class="muted step-note">Re-rolled: ${strs(d.rerolls).join(" · ")}</p>` : ""}
       ${pct ? html`<p class="warn">Special unique room: it only appears once about ${pct}% of the level is explored.</p>` : ""}
-      ${ref ? html`<div class="step-actions">${button(`${d.room ? "Re-roll" : "Roll"} on ${tableLabel(ref)}`, { icon: "dice", size: "lg", variant: d.room ? undefined : "primary", attrs: html`data-act="${ssrtPending ? "ssrt" : "type"}"` })}</div>` : ""}
+      ${ref ? html`<div class="step-actions">${button(`${d.room ? "Re-roll" : "Roll"} on ${tableLabel(ref)}`, { icon: "dice", size: "lg", variant: lead ? "primary" : undefined, attrs: html`data-act="${ssrtPending ? "ssrt" : "type"}"` })}</div>`
+        : d.byBook?.type ? html`<p class="ok">Rolled in your book.</p>`
+        : html`<p class="muted">This level's room table isn't in the library.</p><div class="step-actions">${button("Rolled it in my book", { icon: "book", variant: lead ? "primary" : undefined, attrs: html`data-act="by-book-type"` })}</div>`}
       ${boss.length && !d.room ? html`<div class="step-actions vhulk-boss"><span class="muted">Boss room not met yet? It becomes the last room:</span>${boss.map((b) => button(`Make this the ${b.name.replace(/\*/g, "")}`, { size: "sm", attrs: html`data-boss="${b.row}"` }))}</div>` : ""}
       <p class="muted step-note">"YES" uniques re-roll if already met on this level; "NN% YES" rooms re-roll until about NN% is explored (${explored()}% now).</p>`]);
   }
 
-  function exitsStep(d: Draft, list: Step[]) {
+  function exitsStep(d: Draft, list: Step[], lead: boolean) {
     const exitsCol = col(d, "EXITS");
     const fixed = d.kind === "small" || d.kind === "corridor";
     const count = d.exits === undefined ? "" : d.exits === 0 ? "No new exits (dead end)" : `${d.exits} new exit${d.exits > 1 ? "s" : ""}`;
     const type = exitTypeFor(st.level, d.kind, exitsCol);
     list.push(["Exits", "Exits", d.exits !== undefined, html`
-      ${d.exits !== undefined ? stepResult(html`${rcHead("Number of exits")}<div class="rc-title">${count}</div><div class="rc-text">${fixed ? html`<strong>Archways</strong>` : exitsCol ? html`Room says <strong>${exitsCol}</strong>` : "Type set by the room table."}${d.exitNote ? ` ${d.exitNote}` : ""}</div>`) : html`<p>Roll D6: 1 none (dead end), 2–3 one, 4–5 two, 6 three.${fixed ? html` All are <strong>archways</strong>.` : ""}</p>`}
-      <div class="step-actions">${button(`${d.exits !== undefined ? "Re-roll" : "Roll"} number of exits`, { icon: "dice", size: "lg", variant: d.exits !== undefined ? undefined : "primary", attrs: html`data-act="exits"` })}</div>
+      ${d.exits !== undefined ? stepResult(html`${rcHead("Number of exits")}<div class="rc-title">${count}</div><div class="rc-text">${fixed ? html`<strong>Archways</strong>` : exitsCol ? html`Room says <strong>${exitsCol}</strong>` : d.room ? "Type set by the room table." : "Their type comes from the room table, next."}${d.exitNote ? ` ${d.exitNote}` : ""}</div>`) : html`<p>Roll D6: 1 none (dead end), 2–3 one, 4–5 two, 6 three.${fixed ? html` All are <strong>archways</strong>.` : ""}</p>`}
+      <div class="step-actions">${button(`${d.exits !== undefined ? "Re-roll" : "Roll"} number of exits`, { icon: "dice", size: "lg", variant: lead ? "primary" : undefined, attrs: html`data-act="exits"` })}</div>
       <p class="muted step-note">One per wall, at most 3 new; never the wall you came in by or the hull. A D3 picks the first wall clockwise from your entrance${type !== "unknown" ? `; they're ${VOID_EXIT_NAME[type] ?? type.toLowerCase()}s` : ""}.</p>
       ${ruleNote("the 2nd and 3rd exits carry on clockwise (U17); an exit is only placed where the square past its exit square is free too (U16). EXITS/NEXT is read as the exit type (U18).")}`]);
   }
 
-  function encounterStep(d: Draft, list: Step[]) {
+  function encounterStep(d: Draft, list: Step[], isCur: boolean) {
     const enc = col(d, "ENCOUNTER");
     const desc = col(d, "DESCRIPTION") || col(d, "ROOM DESCRIPTION");
+    const text = `${desc} ${enc}`;
     const chainRoom = d.chain !== undefined ? L10_CHAIN[d.chain] : undefined;
-    const alienBtn = chainRoom?.alien && cards.has(chainRoom.alien) ? fightButton(chainRoom.alien) : "";
+    const hasAlien = !!chainRoom?.alien && cards.has(chainRoom.alien);
     const pr = patrolRef();
-    list.push(["Encounter", "Encounter", false, html`
-      ${!d.room ? html`<p class="muted">Roll the room type first.</p>` : html`
-        ${enc ? html`<div class="vhulk-enc"><strong>Encounter:</strong> ${ctx.inline(enc)}</div>` : desc ? html`<div class="vhulk-enc">${ctx.inline(desc)}</div>` : ""}
-        <p class="muted step-note">Follow it in order. Creatures are always dealt with first, then the other tables, loot and events.</p>
-        <div class="step-actions">${alienBtn}${textActions(`${desc} ${enc}`, "", alienBtn && chainRoom?.alien ? [chainRoom.alien] : [])}</div>`}
-      ${pr ? html`<div class="step-actions">${button(`Patrol (${pr.table.code})`, { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-follow="${pr.sectionId}|0"` })}${hasAlarmChecks(st.level) ? button("Alarm Check (2D6 + Technical ≥ 8)", { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-act="alarm"` }) : ""}</div>` : ""}
-      ${st.level === 9 ? html`<div class="step-actions">${button("A Void Portal is here", { icon: "sparkles", size: "sm", variant: "ghost", attrs: html`data-act="portal"` })}</div>` : ""}
-      ${resultsHtml(d.results)}`]);
+    const aliens = aliensIn(text, cardNames).length + (hasAlien ? 1 : 0);
+    const tables = tableCodesIn(text, (c) => !!tableByCode(c), pr?.table.code ?? null).length;
+    const nothing = !!d.room && !aliens && !tables;
+    const rolled = Array.isArray(d.results) && d.results.length > 0;
+    // next within the step: fight what the room names, else roll what it says, else you're done here
+    const lead = !isCur ? "" : aliens && !d.fought ? "fight" : tables && !rolled ? "table" : "done";
+    const alienBtn = hasAlien ? fightButton(chainRoom!.alien!, "", lead === "fight") : "";
+    const portalHere = st.level === 9 ? button("A Void Portal is here", { icon: "sparkles", size: "sm", variant: "ghost", attrs: html`data-act="portal"` }) : "";
+    const namesPortal = /VOID PORTAL|VOET1/i.test(text);
+    const ready = !!d.room || !!d.byBook?.type;
+    list.push(["Encounter", "Encounter", !!d.encDone, !ready ? html`<p class="muted">Roll the room type first.</p>` : html`
+      ${!d.room ? html`<p>Follow the room's entry in your book.</p>` : enc ? html`<div class="vhulk-enc"><strong>Encounter:</strong> ${ctx.inline(enc)}</div>` : desc ? html`<div class="vhulk-enc">${ctx.inline(desc)}</div>` : ""}
+      ${nothing ? html`<p>Nothing to deal with here.</p>` : html`<p class="muted step-note">Follow it in order. Creatures are always dealt with first, then the other tables, loot and events.</p>`}
+      <div class="step-actions">${alienBtn}${textActions(text, "", hasAlien ? [chainRoom!.alien!] : [], lead === "fight" && !hasAlien, lead === "table")}
+        ${namesPortal ? portalHere : ""}
+        ${d.encDone ? "" : button(nothing ? "Nothing here" : "Encounter resolved", { icon: "check", size: "sm", variant: lead === "done" ? "primary" : undefined, attrs: html`data-act="enc-done"` })}</div>
+      ${d.encDone ? html`<p class="ok">Dealt with.</p>` : ""}
+      ${resultsHtml(d.results)}
+      ${pr || (portalHere && !namesPortal) ? html`<details class="step-more"><summary>Other rolls</summary>
+        <p class="muted">Only when something calls for them: a noisy search, or text the buttons above missed.</p>
+        <div class="step-actions">${pr ? button(`Patrol (${pr.table.code})`, { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-follow="${pr.sectionId}|0"` }) : ""}${pr && hasAlarmChecks(st.level) ? button("Alarm Check (2D6 + Technical ≥ 8)", { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-act="alarm"` }) : ""}${namesPortal ? "" : portalHere}</div>
+      </details>` : ""}`]);
   }
 
   /** Between rooms: pick the exit, get the door open, roll the next room. */
@@ -466,19 +559,20 @@ export function render(page: HTMLElement, ctx: ToolContext) {
       ;
     const can = !!next && passable(next);
     const isL10 = st.level === 10;
+    const ladderSet = !isL10 && m.stairs !== null && m.rooms.some((r) => r.id === m.stairs); // then the ladder's next action leads
     const done10 = isL10 && st.chain >= L10_CHAIN.length;
     const secret = !next && !isL10 && secretDoorAllowed(m, explored());
     return card(
       html`${open.length ? html`<div class="exit-pick"><span class="muted">Next room through:</span>${chips}</div><p class="muted exit-pick-hint">${mapHint(m, false)}</p>` : html`<p class="muted">No open exits left on this level.</p>`}
-      ${next ? doorPanel(next) : ""}
+      ${next ? doorPanel(next, !can && !ladderSet) : ""}
       <div class="step-actions">
-        ${next && !done10 ? button(isL10 ? `Go on to the next room of the chain` : `Roll the next room (D66)`, { icon: "dice", size: "lg", variant: can ? "primary" : undefined, attrs: html`data-act="size"${can ? "" : html` disabled title="Open the way first"`}` }) : ""}
+        ${next && !done10 ? gated(isL10 ? `Go on to the next room of the chain` : `Roll the next room (D66)`, { icon: "dice", size: "lg", variant: ladderSet ? undefined : "primary", attrs: html`data-act="size"` }, can ? null : "Open the way first", "size") : ""}
         ${secret ? button("Add a secret panel (one-way)", { icon: "search", size: "lg", variant: "primary", attrs: html`data-act="secret"` }) : ""}
       </div>
       ${!next && !secret && !isL10 ? html`<p class="muted step-note">Stuck with ${explored()}% explored: put the down-ladder in the last room going forward (a secret panel is only added under 50%).</p>` : ""}
       ${isL10 ? ruleNote("Level 10 rooms aren't rolled: small rooms (2×3, read X then Y; U12) alternate with the AI rooms, then the Escape Pod. Each has one archway exit.") : html`<p class="muted step-note">Each new room: D66 size (Primary = across, Secondary = down). Doubles roll again and add (not double 6); a 1 makes a corridor.</p>`}
       <div class="step-actions">
-        ${button("Backtrack a room", { icon: "arrow-left-right", size: "sm", variant: "ghost", attrs: html`data-act="backtrack" title="Through explored rooms: no new aliens, but Bloodied and Stunned tick"` })}
+        ${st.rooms.length < 2 ? "" : button("Backtrack a room", { icon: "arrow-left-right", size: "sm", variant: "ghost", attrs: html`data-act="backtrack" title="Through explored rooms: no new aliens, but Bloodied and Stunned tick"` })}
         ${button(`Camo Tent (${tents()}/${camoUses(st.level)} used)`, { icon: "shield", size: "sm", variant: "ghost", attrs: html`data-act="camo"${tents() >= camoUses(st.level) ? " disabled" : ""}` })}
         ${hasAlarmChecks(st.level) ? button("Alarm Check", { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-act="alarm"` }) : ""}
       </div>
@@ -491,7 +585,8 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     html`<label class="vhulk-stat"><span>${k === "tech" ? "Technical" : "Coding"}</span><input type="number" min="0" max="12" data-stat="${k}" value="${v ?? ""}" placeholder="?"></label>`;
 
   /** What it takes to get through exit e (§2.8). */
-  function doorPanel(e: MapExit): Raw {
+  function doorPanel(e: MapExit, lead: boolean): Raw {
+    const v = lead ? ("primary" as const) : undefined;
     const s = sheet();
     const tech = s.tech ?? st.stats.tech;
     const coding = s.coding ?? st.stats.coding;
@@ -503,35 +598,38 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const res = dr.note || dr.html ? stepResult(noteHtml(dr.note ?? dr.html)) : "";
     const breaker = button("Lock Breaker", { size: "sm", variant: "ghost", attrs: html`data-door="breaker" title="Freighter Captain craft: opens any door"` });
     let body: Raw | "" = "";
-    if (e.type === "archway" || e.type === "unknown") body = html`<p>${name}: walk through.</p>`;
+    if (e.type === "unknown")
+      body = html`<p>What kind of exit is this? (Its type comes from the room's entry in your book.)</p>
+        <div class="step-actions">${(["archway", "sliding", "security", "biocoded", "barrier"] as ExitType[]).map((k) => button(VOID_EXIT_NAME[k] ?? k, { size: "sm", attrs: html`data-exit-type="${k}"` }))}</div>`;
+    else if (e.type === "archway") body = html`<p>${name}: walk through.</p>`;
     else if (e.type === "secret") body = html`<p>Secret panel: one-way, you can't come back through it.</p>`;
     else if (e.type === "barrier") {
       body = dr.crossed ? html`<p class="ok">You're through the barrier.</p>` : html`<p>An archway filled with energy. Passing costs <strong>${barrierDice(st.level)}</strong> damage (D6 per Hulk level).</p>
-        <div class="step-actions">${button(`Pass through (${barrierDice(st.level)})`, { icon: "zap", size: "sm", variant: "primary", attrs: html`data-door="barrier"` })}
+        <div class="step-actions">${button(`Pass through (${barrierDice(st.level)})`, { icon: "zap", size: "sm", variant: v, attrs: html`data-door="barrier"` })}
           ${button("Electric Discharge Stim", { size: "sm", variant: "ghost", attrs: html`data-door="stim"` })}${button("Diffusion Grenade (takes it down)", { size: "sm", variant: "ghost", attrs: html`data-door="diffuse"` })}</div>
-        ${ruleNote("crossing an electrical barrier again (backtracking) costs the damage again unless it was taken down (U23).")}`;
+        ${ruleNote("crossing an electrical barrier again (backtracking) costs the damage again unless it was taken down: apply it by hand, the app doesn't track backtracking (U23).")}`;
     } else if (!dr.checked) {
       body = html`<p>${name}, not yet checked. First time through: roll D6 for the lock (locked on ${e.type === "sliding" ? "6" : e.type === "security" ? "5–6" : "4–6"}).</p>
-        <div class="step-actions">${button("Check the lock (D6)", { icon: "dice", size: "sm", variant: "primary", attrs: html`data-door="check"` })}</div>`;
+        <div class="step-actions">${button("Check the lock (D6)", { icon: "dice", size: "sm", variant: v, attrs: html`data-door="check"` })}</div>`;
     } else if (!dr.locked || dr.open) body = html`<p class="ok">${name}: open.</p>`;
     else if (e.type === "sliding") {
       body = html`<p><strong>Locked sliding door.</strong> No lock to hack: force it with the crowbar (2D6 ≤ Technical). If you roll over, it still opens but roll SLDT1.</p>
         <div class="step-actions vhulk-statrow">${s.tech === undefined ? statInput("tech", st.stats.tech) : html`<span class="muted">Technical ${tech}</span>`}
-          ${button("Crowbar (2D6)", { icon: "dice", size: "sm", variant: "primary", attrs: html`data-door="crowbar"${tech === undefined ? " disabled" : ""}` })}
+          ${button("Crowbar (2D6)", { icon: "dice", size: "sm", variant: v, attrs: html`data-door="crowbar"${tech === undefined ? " disabled" : ""}` })}
           ${button("Mag Grenade (used up)", { size: "sm", variant: "ghost", attrs: html`data-door="open"` })}${breaker}${wait}</div>
-        ${dr.pinned ? html`<p class="warn">Pinned: the door only opens when a patrol comes through. Fight it (SLDT1 2: +1), then it's open.</p><div class="step-actions">${button("Won the fight: the door is open", { size: "sm", attrs: html`data-door="open"` })}</div>` : ""}`;
+        ${dr.pinned ? html`<p class="warn">Pinned: this door opens only for a passing patrol. Fight it (SLDT1 2: +1), then it's open.</p><div class="step-actions">${button("Won the fight: the door is open", { size: "sm", attrs: html`data-door="open"` })}</div>` : ""}`;
     } else if (e.type === "security") {
       const n = (dr.attempts ?? 0) + 1;
       body = dr.lockedOut
         ? html`<p><strong>Locked out.</strong> Only the code FAST1 named (or a Lock Breaker) opens it now.</p><div class="step-actions">${button("Use the access code", { size: "sm", attrs: html`data-door="open"` })}${breaker}${wait}</div>`
         : html`<p><strong>Locked security door.</strong> Hack the pad: 2D6 ≤ Coding. Every failure rolls FAST1.</p>
         <div class="step-actions vhulk-statrow">${s.coding === undefined ? statInput("coding", st.stats.coding) : html`<span class="muted">Coding ${coding}</span>`}
-          ${button(`Hack, attempt ${n} (2D6${n > 1 ? ` −${2 * (n - 1)}` : ""})`, { icon: "dice", size: "sm", variant: "primary", attrs: html`data-door="hack"${coding === undefined ? " disabled" : ""}` })}${breaker}${wait}</div>
+          ${button(`Hack, attempt ${n} (2D6${n > 1 ? ` −${2 * (n - 1)}` : ""})`, { icon: "dice", size: "sm", variant: v, attrs: html`data-door="hack"${coding === undefined ? " disabled" : ""}` })}${breaker}${wait}</div>
         ${ruleNote('"−2 for each attempt" is read as −2 on the roll for each earlier attempt, cumulative (a minus makes a roll-under check easier); you may retry after FAST1 11–12 (U21).')}`;
     } else if (e.type === "biocoded") {
       body = html`<p><strong>Locked bio-coded door.</strong> It can't be forced or hacked: the scanner wants a limb from a <em>sentient, biological</em> alien. You need a blade, and amputating makes you Bloodied.</p>
         <div class="step-actions vhulk-statrow"><label class="vhulk-check"><input type="checkbox" data-bio-more> Met more than one of that alien here (+1)</label>
-          ${button("Try a limb (D6, 4–6 opens)", { icon: "dice", size: "sm", variant: "primary", attrs: html`data-door="limb"` })}${breaker}${wait}</div>
+          ${button("Try a limb (D6, 4–6 opens)", { icon: "dice", size: "sm", variant: v, attrs: html`data-door="limb"` })}${breaker}${wait}</div>
         ${ruleNote("each alien corpse allows one try, and you may fetch a limb by backtracking (U20). Amputating ticks the first Bloodied box at once (U36).")}`;
     }
     const lockedNow = isVoidDoor(e.type) && dr.locked && !dr.open;
@@ -553,21 +651,25 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const s = sheet();
     const boss = bosses();
     const charLevel = s.level ?? 1;
+    if (st.current) return html`${out}`; // the ladder is for between rooms
+    const canRation = !s.has || (s.rations ?? 0) > 0;
+    const canParts = !s.has || (s.rationParts ?? 0) >= 2;
+    const podReady = st.chain >= L10_CHAIN.length;
     out.push(card(
-      html`${ladderRoom ? html`<p>The down-ladder is in <strong>#${ladderRoom.n} ${ladderRoom.label}</strong>.</p>` : html`<p class="muted">Put the down-ladder in the last room going forward (its room card on the map, or the Leave step).</p>`}
+      html`${ladderRoom ? html`<p>The down-ladder is in <strong>#${ladderRoom.n} ${ladderRoom.label}</strong>.</p>` : st.level < 10 ? html`<p class="muted">No down-ladder yet. Put it in the last room going forward, once at least half the level is explored (the button under Finish room, or the room's card on the map).</p>` : ""}
       ${boss.length ? html`<p class="warn">Boss room not met yet: ${boss.map((b) => b.name).join(" or ")}. If it was never rolled it becomes the last room.</p>` : ""}
-      <p class="muted step-note">At the ladder: eat a ration and rest (+${2 * charLevel} HP, +${charLevel} more with a cloth or bandage, up to baseline), or lose half your HP (max 20).</p>
-      <div class="step-actions">
-        <label class="vhulk-check"><input type="checkbox" data-cloth> Use a cloth or bandage</label>
-        ${button("Eat a ration and rest", { icon: "utensils", size: "sm", attrs: html`data-rest="full"` })}
-        ${button("Two ration parts", { size: "sm", variant: "ghost", attrs: html`data-rest="parts"` })}
-        ${button("No ration", { size: "sm", variant: "ghost", attrs: html`data-rest="none"` })}
-      </div>
-      ${st.rest ? html`<p class="ok">${st.rest}</p>` : ""}
-      ${ruleNote("half and quarter HP losses round down, and the 20 HP cap applies to both (U8).")}
+      ${ladderRoom && st.level < 10 ? html`
+        ${st.rest ? html`<p class="ok">${st.rest}</p>` : html`<p class="muted step-note">At the ladder: eat a ration and rest (+${2 * charLevel} HP, +${charLevel} more with a cloth or bandage, up to baseline), or lose half your HP (max 20).</p>
+          <div class="step-actions">
+            <label class="vhulk-check"><input type="checkbox" data-cloth> Use a cloth or bandage</label>
+            ${button("Eat a ration and rest", { icon: "utensils", size: "sm", variant: canRation ? "primary" : undefined, attrs: html`data-rest="full"${canRation ? "" : html` disabled title="No rations left"`}` })}
+            ${button("Two ration parts", { size: "sm", variant: "ghost", attrs: html`data-rest="parts"${canParts ? "" : html` disabled title="You don't have two ration parts"`}` })}
+            ${button("No ration", { size: "sm", variant: canRation ? "ghost" : "primary", attrs: html`data-rest="none"` })}
+          </div>
+          ${ruleNote("half and quarter HP losses round down, and the 20 HP cap applies to both (U8).")}`}` : ""}
       <div class="step-actions">${st.level < 10
-        ? button(`Go down to level ${nextLevel(st.level)}`, { icon: "arrow-down", variant: "primary", attrs: html`data-act="descend"` })
-        : button("Launch the Escape Pod", { icon: "sparkles", variant: "primary", attrs: html`data-act="escape"${st.chain >= L10_CHAIN.length ? "" : html` disabled title="Reach the Escape Pod Room first"`}` })}
+        ? ladderRoom ? gated(`Go down to level ${nextLevel(st.level)}`, { icon: "arrow-down", variant: st.rest ? "primary" : undefined, attrs: html`data-act="descend"` }, st.rest ? null : "Rest at the ladder first", "descend") : ""
+        : button("Launch the Escape Pod", { icon: "sparkles", variant: podReady ? "primary" : undefined, attrs: html`data-act="escape"${podReady ? "" : html` disabled title="Finish the Escape Pod Room first"`}` })}
         ${button("Restart this level", { icon: "rotate-ccw", variant: "ghost", attrs: html`data-act="restart"` })}</div>`,
       { eyebrow: "Going down", title: st.level < 10 ? "The ladder" : "Escape" },
     ));
@@ -583,6 +685,9 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     st.portals = [];
     st.chain = 0;
     st.camo = 0;
+    st.entered = undefined;
+    // however the level began (the ladder, the Level select, a restart): level-scoped effects and Camo Tent uses start over
+    withChar(startHulkLevel);
     st.doors = {};
     st.loose = [];
     st.rest = undefined;
@@ -593,11 +698,11 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     journal("start", st.current);
   }
 
-  async function rollSize() {
+  async function rollSize(force = false) {
     const m = M();
     const exit = nextExit(m);
     if (!exit) return ctx.toast("No open exits left.");
-    if (!passable(exit)) return ctx.toast("Get through that exit first.");
+    if (!force && !passable(exit)) return ctx.toast("Get through that exit first.");
     const n = st.rooms.length + 1;
     let x: number, y: number, kind: HulkKind, note: string, chain: number | undefined;
     if (st.level === 10) {
@@ -635,7 +740,9 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     m.sel = null;
     const entry: Side = ({ N: "S", S: "N", E: "W", W: "E" } as const)[exit.side];
     const d: Draft = { n, dice: note, kind, w: pl.w, h: pl.h, results: [], mapRoom: room.id, entry, via: exit.id, chain };
-    d.trackers = enterRoom() || undefined;
+    // Bloodied / Stunned / Regenerative tick once per room entered: a discarded room rolled again through the same exit already did
+    if (st.entered !== exit.id) d.trackers = enterRoom() || undefined;
+    st.entered = undefined;
     if (chain !== undefined) {
       st.chain = chain + 1;
       const nextRoom = L10_CHAIN[chain + 1];
@@ -657,6 +764,9 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const ref = id ? tableAt(id) : undefined;
     if (!ref) return ctx.toast("Couldn't find that table.");
     d.rerolls = [];
+    const undone = undoAuto(d); // what the old roll put on the survivor goes with it
+    if (undone) ctx.toast(undone);
+    resetEncounter(d); // a room rolled again starts its encounter over
     for (let i = 0; i < 12; i++) {
       const r = await rollAndLog(ref, 0, undefined, `Hulk L${st.level} · room ${d.n}`);
       const { columns, cells } = entryCells(r.ref.table, r.rowIndex, r.half);
@@ -670,6 +780,10 @@ export function render(page: HTMLElement, ctx: ToolContext) {
       break;
     }
     syncMap(d);
+    if (d.room) {
+      const msgs = autoApply(d, d.room.cells.slice(1).join(" "));
+      if (msgs.length) ctx.toast(`Your sheet: ${msgs.join(" ")}`);
+    }
     persist();
     journal("update", d);
     draw();
@@ -699,7 +813,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
       d.w = mr.w;
       d.h = mr.h;
     }
-    d.kind = "regular"; // "Roll on the normal Level Rooms table"
+    d.kind = "regular"; // the level's ordinary room table
     syncMap(d);
     persist();
     draw();
@@ -763,6 +877,8 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     const d = st.current;
     if (!d) return;
     journal("discard", d);
+    const undone = undoAuto(d);
+    if (undone) ctx.toast(undone);
     const mr = mapRoom(d);
     if (mr) {
       const m = M();
@@ -772,6 +888,10 @@ export function render(page: HTMLElement, ctx: ToolContext) {
       if (m.stairs === mr.id) m.stairs = null;
     }
     if (d.chain !== undefined) st.chain = d.chain;
+    // its Void Portal goes with it (a ghost portal could be rolled as the way back), and the rest keep their order
+    if (d.mapRoom !== undefined && st.portals.some((p) => p.room === d.mapRoom))
+      st.portals = st.portals.filter((p) => p.room !== d.mapRoom).map((p, i) => ({ ...p, n: i + 1 }));
+    if (d.via !== undefined && d.entry !== null) st.entered = d.via;
     st.current = null;
     persist();
   }
@@ -893,13 +1013,19 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     if (!ref) return ctx.toast(`No table ${key} in the library.`);
     const r = await rollAndLog(ref, mod, undefined, st.current ? `Hulk L${st.level} · room ${st.current.n}` : `Hulk L${st.level}`);
     (st.current ? st.current.results : st.loose).push({ label: ref.title, note: [rollPart(r)] });
+    if (r.rowIndex >= 0) {
+      const msgs = autoApply(st.current, r.cells.slice(1).join(" "));
+      if (msgs.length) ctx.toast(`Your sheet: ${msgs.join(" ")}`);
+    }
     persist();
     if (st.current && r.rowIndex >= 0) journal("update", st.current, { encounter: r.cells[1] || ref.title });
     draw();
   }
 
   function rest(kind: Ration) {
+    if (st.rest) return ctx.toast("You have already eaten or gone without at this ladder.");
     const s = sheet();
+    if (s.has && kind === "parts" && (s.rationParts ?? 0) < 2) return ctx.toast("You don't have two ration parts.");
     const cloth = !!root.querySelector<HTMLInputElement>("[data-cloth]")?.checked;
     if (!s.has) {
       st.rest = kind === "full" ? "Ate a ration: +2 HP per level (+1 more per level with a cloth), up to baseline. Update your sheet." : `Lose ${kind === "parts" ? "a quarter" : "half"} your HP (max 20). Update your sheet.`;
@@ -918,11 +1044,11 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     draw();
   }
 
-  function descend() {
+  function descend(force = false) {
     const m = M();
     const ladder = m.stairs !== null ? m.rooms.find((r) => r.id === m.stairs) : undefined;
     if (!ladder && !confirm("No down-ladder is placed. Go down anyway (you'll enter the next level mid-south)?")) return;
-    if (!st.rest && !confirm("You haven't eaten or rested at the ladder. Go down anyway?")) return;
+    if (!st.rest && !force) return ctx.toast("Rest at the ladder first.");
     const from = st.level;
     withChar((c) => {
       c.hero[from - 1] = true;
@@ -943,6 +1069,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
   root.addEventListener("change", (e) => {
     const el = e.target as HTMLSelectElement | HTMLInputElement;
     if (el.dataset.level !== undefined) {
+      if (busy) return draw(); // a roll in flight would land its room on the new level
       if (st.map && !confirm("Switch level? This starts a fresh map for that level.")) return draw();
       st.level = +el.value;
       st.map = undefined;
@@ -970,23 +1097,45 @@ export function render(page: HTMLElement, ctx: ToolContext) {
   root.addEventListener("click", async (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button");
     if (!b || b.disabled || busy || b.dataset.pickExit) return;
+    const over = overrideOf(e.target); // "Do it anyway" on a blocked action
     b.disabled = true;
     busy = true;
     try {
       mapView.setBusy(true);
       const d = st.current;
-      const act = b.dataset.act;
+      const act = over ?? b.dataset.act;
       if (act === "start") startLevel();
-      else if (act === "size") await rollSize();
+      else if (act === "size") await rollSize(!!over);
+      else if (act === "enc-done" && d) {
+        d.encDone = true;
+        persist();
+      } else if (act === "by-book-type" && d) {
+        d.byBook = { type: true };
+        persist();
+      } else if (b.dataset.exitType && !d) {
+        const ex = nextExit(M());
+        if (ex) {
+          ex.type = b.dataset.exitType as ExitType;
+          delete st.doors[ex.id];
+          persist();
+        }
+      }
       else if (act === "type" && d) await rollType();
       else if (act === "ssrt" && d) await rollSsrt();
       else if (act === "special" && d) readSpecial();
       else if (act === "exits" && d) await rollExits();
       else if (act === "finish" && d) finishRoom();
-      else if (act === "discard" && d) discardRoom();
+      else if (act === "discard" && d) {
+        if (!confirm(undoTurnWarning(d.n))) return;
+        discardRoom();
+      }
       else if (b.dataset.kind && d) {
         d.kind = b.dataset.kind as HulkKind;
         d.room = undefined;
+        delete d.byBook;
+        const undone = undoAuto(d);
+        if (undone) ctx.toast(undone);
+        resetEncounter(d);
         syncMap(d);
         persist();
         journal("update", d);
@@ -1023,13 +1172,16 @@ export function render(page: HTMLElement, ctx: ToolContext) {
         const t = enterRoom();
         ctx.toast(t || "You move back through an explored room: no new aliens.");
       } else if (act === "camo") {
+        if (tents() >= camoUses(st.level)) return;
         const gained = withChar(camoRest);
         st.camo++;
         ctx.toast(gained !== undefined ? `Camo Tent: +${gained} HP, Stunned cleared.` : "Camo Tent pitched: with a ration HP to baseline, without +half baseline (cap baseline); Stunned clears.");
         persist();
-      } else if (act === "descend") descend();
+      } else if (act === "descend") descend(!!over);
       else if (act === "escape") {
+        if (st.chain < L10_CHAIN.length || d) return;
         st.victory = true;
+        withChar((c) => (c.hero[9] = true)); // completing level 10 is the last box of Hero Status
         persist();
         bus.emit("journal:milestone", { kind: "leave", level: 10 });
       } else if (act === "restart") {
@@ -1047,9 +1199,19 @@ export function render(page: HTMLElement, ctx: ToolContext) {
       else if (b.dataset.follow) {
         const [key, mod] = b.dataset.follow.split("|");
         await follow(key, +mod || 0);
+      } else if (b.dataset.cond) {
+        const [kind, n] = b.dataset.cond.split("|");
+        const msg = withChar((c) => applyCondition(c, { kind: kind as ConditionKind, n: +n || 0, auto: false }));
+        ctx.toast(msg ? `Your sheet: ${msg}` : "No change: your sheet already shows that.");
       } else if (b.dataset.fightName) {
         if (!b.dataset.fight) ctx.toast(`No alien card for ${b.dataset.fightName} in the library.`);
-        else fight(b.dataset.fight, b.dataset.fightName, b.dataset.fightSpecial ?? "");
+        else {
+          if (d) {
+            d.fought = true;
+            persist();
+          }
+          fight(b.dataset.fight, b.dataset.fightName, b.dataset.fightSpecial ?? "");
+        }
       }
       draw();
     } finally {
@@ -1073,7 +1235,7 @@ export function render(page: HTMLElement, ctx: ToolContext) {
     }),
   );
   const onStorage = (e: StorageEvent) => {
-    if (!e.key?.endsWith(":play:vhulk") || !e.newValue) return;
+    if (e.key !== playKey("vhulk") || !e.newValue) return;
     try {
       const saved = (JSON.parse(e.newValue) as Partial<State> | null)?.map;
       if (st.map && saved && Array.isArray(saved.rooms)) {

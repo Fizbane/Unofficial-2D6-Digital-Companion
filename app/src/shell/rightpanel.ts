@@ -1,9 +1,9 @@
-// The right panel: a tab bar (Results · Notes · Journal) over one pane per tab. Add a tab by
+// The right panel: a tab bar (Results · Notes · Journal · Combat log) over one pane per tab. Add a tab by
 // adding its id to PANEL_IDS (panelmodel.ts), a row to TABS and filling its pane in shell.ts.
 // The active tab is saved in "2d6:shell:layout".panelTab; a tab that gets content while it isn't
 // on screen shows a badge dot until it is viewed. Each pane is filled by its module in panels/.
 import type { Layout } from "./layout";
-import { Badges, PANEL_IDS, panelTab, type PanelId } from "./panelmodel";
+import { Badges, PANEL_IDS, panelTab, stepPanel, type PanelId } from "./panelmodel";
 import { tabsBar } from "../ui/components";
 import type { IconName } from "../ui/icon";
 import { html, setHTML } from "../ui/html";
@@ -14,6 +14,7 @@ const TABS: { id: PanelId; label: string; icon: IconName }[] = [
   { id: "results", label: "Results", icon: "dice" },
   { id: "notes", label: "Notes", icon: "notebook" },
   { id: "journal", label: "Journal", icon: "book-open" },
+  { id: "combat", label: "Combat log", icon: "swords" },
 ];
 
 interface Panel {
@@ -29,6 +30,7 @@ let panel: Panel | null = null;
 const badges = new Badges();
 const showHooks: ((id: PanelId) => void)[] = [];
 let lastShown: PanelId | null = null;
+const hiddenTabs = new Set<PanelId>(); // tabs that don't apply right now (the Combat log outside a delve)
 
 /** Is this tab on screen right now? */
 function visible(id: PanelId): boolean {
@@ -109,25 +111,43 @@ export function initRightPanel(host: HTMLElement, layout: Layout, toggleBtn: HTM
   bar.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
-    const i = PANEL_IDS.indexOf(panel!.active);
-    const n = PANEL_IDS.length;
-    const next = e.key === "Home" ? 0 : e.key === "End" ? n - 1 : (i + (e.key === "ArrowRight" ? 1 : -1) + n) % n;
-    select(PANEL_IDS[next], true);
+    select(stepPanel(PANEL_IDS, panel!.active, e.key === "Home" ? "first" : e.key === "End" ? "last" : e.key === "ArrowRight" ? 1 : -1, hiddenTabs), true);
   });
   layout.onChange(clearVisible);
   select(active);
   return panes;
 }
 
+/**
+ * Show or hide a tab that only applies some of the time. A hidden tab's button is gone from the bar; if it was
+ * the open tab, Results takes its place (without changing the saved tab, so it comes back when it applies again).
+ */
+export function setPanelTabHidden(id: PanelId, hidden: boolean): void {
+  if (!panel || hiddenTabs.has(id) === hidden) return;
+  if (hidden) hiddenTabs.add(id);
+  else hiddenTabs.delete(id);
+  const btn = panel.bar.querySelector<HTMLElement>(`[data-tab="${id}"]`);
+  if (btn) btn.hidden = hidden;
+  if (hidden) {
+    badges.seen(id);
+    if (panel.active === id) {
+      const saved = panel.layout.state.panelTab;
+      select("results");
+      if (saved === id) panel.layout.set({ panelTab: id });
+    } else paintBadges();
+  } else if (panelTab(panel.layout.state) === id && panel.active !== id) select(id);
+}
+
 /** Open (expand) the panel on tab `id`. */
 export function showPanel(id: PanelId): void {
-  if (!panel) return;
+  if (!panel || hiddenTabs.has(id)) return;
   if (!panel.layout.shown("panel")) panel.layout.toggle("panel", false);
   select(id);
 }
 
 /** Mark unseen content on tab `id` when it isn't on screen. */
 export function badge(id: PanelId): void {
+  if (hiddenTabs.has(id)) return;
   badges.mark(id, visible(id));
   paintBadges();
 }

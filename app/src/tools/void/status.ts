@@ -24,5 +24,5 @@ export function voidStatus(route: string | null): { text: string; target: string
   if (route === "#/play/vhulk" || !hasSaved("vhulk")) return null;
   const h = load<HulkLike>("vhulk", { level: 1, rooms: [] });
   if (!h.rooms.length) return null;
-  return { text: `Dark Hulk L${h.level} · ${h.rooms.length} room${h.rooms.length === 1 ? "" : "s"}`, target: "#/play/vhulk", title: "Open the Hulk turn tab" };
+  return { text: `Dark Hulk L${h.level} · ${h.rooms.length} room${h.rooms.length === 1 ? "" : "s"}`, target: "#/play/vhulk", title: "Open the Start Game tab" };
 }

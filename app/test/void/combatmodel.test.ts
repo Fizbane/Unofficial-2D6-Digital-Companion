@@ -34,7 +34,7 @@ describe("alien cards from the library", () => {
     for (const a of all) {
       expect(a.hp, a.name).toBeGreaterThan(0);
       expect(a.man.length, a.name).toBeGreaterThan(0);
-      expect(a.type, a.name).toMatch(/^[BCERS]$/);
+      expect(a.type, a.name).toMatch(/^[BCERSP]$/);
       const rows = a.interruptText ? a.interruptText.split(" | ").length : 0;
       expect(a.interrupts.length, `${a.name}: ${a.interruptText}`).toBe(rows);
       if (a.deflectionText && !/none/i.test(a.deflectionText)) expect(a.deflection.length, a.name).toBeGreaterThan(0);
@@ -59,11 +59,11 @@ describe("alien cards from the library", () => {
 
 describe("card field parsers", () => {
   it("interrupts, with specials and odd commas", () => {
-    expect(parseInterrupt("Rust Plating on Primary 2s and 5s -1 damage + special - it  heals 1 HP.")).toMatchObject({ values: [2, 5], reduce: 1, special: "it heals 1 HP." });
-    expect(parseInterrupt("Loose Cords on Primary 2s, 3s 5s and 6s -1 damage")?.values).toEqual([2, 3, 5, 6]);
-    expect(parseInterrupt("Plate Armour on Secondary 2s and 3s -1 damage")).toMatchObject({ die: "S", movement: false });
+    expect(parseInterrupt("Tin Scales on Primary 6s and 1s -2 damage + special - it  mends 3 HP.")).toMatchObject({ values: [6, 1], reduce: 2, special: "it mends 3 HP." });
+    expect(parseInterrupt("Frayed Cords on Primary 6s, 4s 2s and 1s -2 damage")?.values).toEqual([6, 4, 2, 1]);
+    expect(parseInterrupt("Bone Shell on Secondary 1s and 4s -3 damage")).toMatchObject({ die: "S", movement: false });
     expect(parseInterrupt("Quick Dart on Primary 3s and 4s -1 damage")?.movement).toBe(true);
-    expect(parseInterrupt("Shimmer Ward on Primary 1s, 2s 3s, 4s, 5s and 6s -10 damage")?.values).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(parseInterrupt("Glimmer Veil on Primary 6s, 5s 4s, 3s, 2s and 1s -7 damage")?.values).toEqual([6, 5, 4, 3, 2, 1]);
     expect(parseInterrupt("")).toBeNull();
   });
   it("red-boxed deflection numbers by position", () => {
@@ -73,8 +73,8 @@ describe("card field parsers", () => {
     expect(parseDeflection("none", two)).toEqual([]);
   });
   it("manoeuvres and alien ranged weapons", () => {
-    expect(parseAlienManoeuvre("[5][2] - ARCING ELECTRICITY = D6 -2 + special - Gain the Stunned 1 Condition")).toMatchObject({ p: 5, s: 2, dmg: { dice: 1, mod: -2 }, special: "Gain the Stunned 1 Condition" });
-    expect(parseAlienManoeuvre("[5][5] - LATCHES ON = D6 (-1 Marksmanship)")).toMatchObject({ special: "-1 Marksmanship" });
+    expect(parseAlienManoeuvre("[6][1] - SPARK WHIP = D6 -4 + special - You are Stunned 2 now")).toMatchObject({ p: 6, s: 1, dmg: { dice: 1, mod: -4 }, special: "You are Stunned 2 now" });
+    expect(parseAlienManoeuvre("[4][4] - GRIPS TIGHT = D6 (-2 Marksmanship)")).toMatchObject({ special: "-2 Marksmanship" });
     expect(parseAlienManoeuvre("[2][6] - LASER SCALPELS = 3D6 +10")?.dmg).toEqual({ dice: 3, sides: 6, mod: 10 });
     expect(parseAlienManoeuvre("[2][5] - LASHING CABLE = D3 +2")?.dmg).toEqual({ dice: 1, sides: 3, mod: 2 });
     expect(parseAlienRanged("Acid Mist* 5, D6 -3")).toMatchObject({ name: "Acid Mist", hullOk: true, marks: 5, dmg: { dice: 1, mod: -3 }, uses: null });
@@ -114,7 +114,7 @@ describe("close combat", () => {
     expect(alienChoice(1, 1, am, 1)).toBeNull();
   });
   it("one interrupt per round, the best; movement ones stop at round 7", () => {
-    const a = { interrupts: [parseInterrupt("Quick Dodge on Primary 2s and 4s -1 damage")!, parseInterrupt("Hard Exo-Frame on Secondary 2s and 5s -2 damage")!] };
+    const a = { interrupts: [parseInterrupt("Quick Dodge on Primary 4s and 2s -1 damage")!, parseInterrupt("Hard Exo-Frame on Secondary 5s and 2s -2 damage")!] };
     expect(interruptFor(a, 2, 2, { round: 1, disabled: false })?.reduce).toBe(2);
     expect(interruptFor(a, 4, 1, { round: 1, disabled: false })?.name).toBe("Quick Dodge");
     expect(interruptFor(a, 4, 1, { round: 7, disabled: false })).toBeNull();
@@ -157,19 +157,19 @@ describe("close combat", () => {
 
 describe("card text effects", () => {
   it("mishaps hurt the alien unless you're hit", () => {
-    expect(cardEffect("The creature slips on the deck and hits the bulkhead. You lash out. It loses 4 HP.", "mishap").foeDamage).toEqual([{ dice: 0, sides: 6, mod: 4 }]);
+    expect(cardEffect("The beast trips over a crate and cracks its skull on a pipe. It loses 4 HP.", "mishap").foeDamage).toEqual([{ dice: 0, sides: 6, mod: 4 }]);
     const gar = cardEffect("The blob bursts. You are hit by burning slime and lose D6 -1 HP.", "mishap");
     expect(gar.youDamage).toEqual([{ dice: 1, sides: 6, mod: -1 }]);
     expect(gar.foeDamage).toEqual([]);
-    expect(cardEffect("The machine stalls and you strike it for D6 damage before it recovers.", "mishap").foeDamage[0]).toMatchObject({ dice: 1 });
-    expect(cardEffect("The thing is sluggish and misses the next round of combat.", "mishap").foeSkip).toBe(true);
-    expect(cardEffect("Its guns jam. It misses this round and the next.", "mishap").foeSkip).toBe(true);
+    expect(cardEffect("Its servos lock up, so you strike it for D6 damage while it reboots.", "mishap").foeDamage[0]).toMatchObject({ dice: 1 });
+    expect(cardEffect("Dazed by the flare, it misses the next round.", "mishap").foeSkip).toBe(true);
+    expect(cardEffect("Its feeder clogs, so it misses this round as well as the next.", "mishap").foeSkip).toBe(true);
     expect(cardEffect("In the smoke they collide with each other and lose 5 HP.", "mishap").foeDamage[0].mod).toBe(5);
     expect(cardEffect("It lunges but you step aside and it strikes the hatch and takes 10 damage.", "mishap").foeDamage[0].mod).toBe(10);
-    const ex = cardEffect("The creature bursts. You are now Bloodied and it dies. You gain no XP.", "mishap");
+    const ex = cardEffect("The husk splits apart. You are now Bloodied, and the husk dies. Sadly you gain no XP.", "mishap");
     expect(ex).toMatchObject({ bloodied: true, foeDies: true, noXp: true });
-    expect(cardEffect("It stumbles under its own bulk. You can take a free shot if you wish.", "mishap").freeShot).toBe(true);
-    const limb = cardEffect("It swings a claw but it snaps off. It loses 8 HP and -1 Shift.", "mishap");
+    expect(cardEffect("It topples backwards. Take a free shot at it.", "mishap").freeShot).toBe(true);
+    const limb = cardEffect("A tendril tears loose. It loses 8 HP and has -1 Shift from now on.", "mishap");
     expect(limb).toMatchObject({ foeShift: -1 });
     expect(limb.foeDamage[0].mod).toBe(8);
     expect(cardEffect("It grows sluggish. It loses 1 Shift next round.", "mishap")).toMatchObject({ foeShiftNext: -1, foeDamage: [] });
@@ -178,14 +178,14 @@ describe("card text effects", () => {
     expect(cardEffect("It coils round your arm and bites down. Lose D3 +1 HP.", "prime").youDamage).toEqual([{ dice: 1, sides: 3, mod: 1 }]);
     expect(cardEffect("It spits venom at your face, causing D6 -1 damage.", "prime").youDamage[0]).toMatchObject({ dice: 1, mod: -1 });
     expect(cardEffect("A shock wave rolls through the deck. Gain the Stunned 3 Condition.", "prime").stun).toBe(3);
-    expect(cardEffect("It clamps on and drains you. Lose 4 HP and miss the next round.", "prime")).toMatchObject({ youSkip: true, foeSkip: false });
-    const dm = cardEffect("Shards of black glass burst from it. It loses 10 HP. You lose 2D6 +12 HP.", "prime");
-    expect(dm.foeDamage[0].mod).toBe(10);
-    expect(dm.youDamage[0]).toEqual({ dice: 2, sides: 6, mod: 12 });
+    expect(cardEffect("It wraps you in coils. Lose 3 HP, then you miss the next round.", "prime")).toMatchObject({ youSkip: true, foeSkip: false });
+    const dm = cardEffect("Its core overloads in a white flash. It loses 9 HP. You lose 2D6 +11 HP.", "prime");
+    expect(dm.foeDamage[0].mod).toBe(9);
+    expect(dm.youDamage[0]).toEqual({ dice: 2, sides: 6, mod: 11 });
     expect(cardEffect("Every turret in the room fires together. Lose 4D6 HP +5.", "prime").youDamage[0]).toEqual({ dice: 4, sides: 6, mod: 5 });
-    expect(cardEffect("It slashes you for D6 +2 damage leaving a burn. Lose 2 HP next round.", "prime").youDamage).toEqual([{ dice: 1, sides: 6, mod: 2 }]);
-    expect(cardEffect("Its vines bind you. Lose 4 HP. It gains +2 Shift next round.", "prime").foeShiftNext).toBe(2);
-    expect(cardEffect("It rams you off your feet. -2 Shift next round. Lose 2 HP.", "prime").youShiftNext).toBe(-2);
+    expect(cardEffect("It rakes you for D6 +2 damage and the wound smoulders. Lose 1 HP next round.", "prime").youDamage).toEqual([{ dice: 1, sides: 6, mod: 2 }]);
+    expect(cardEffect("Roots coil round your legs. It gains +2 Shift next round. Then lose 3 HP.", "prime").foeShiftNext).toBe(2);
+    expect(cardEffect("You are knocked flat. You have -2 Shift next round. Lose 1 HP.", "prime").youShiftNext).toBe(-2);
     expect(cardEffect("The probe darts in and stings you. Roll on NEPT1 -1.", "prime").tables).toBe(true);
     expect(cardEffect("It hurls a shard of hull at you. It cuts your side. Lose D6 +4.", "prime").youDamage[0]).toEqual({ dice: 1, sides: 6, mod: 4 });
   });
@@ -196,10 +196,10 @@ describe("card text effects", () => {
     }
   });
   it("conditional specials", () => {
-    expect(conditional("roll a D6. On a 1 to 3 lose an extra 1 HP.")).toEqual({ lo: 1, hi: 3, then: "lose an extra 1 HP." });
-    expect(conditional("Roll a D6. On a 1 your arm is damaged. Lose 1 MA.")).toMatchObject({ lo: 1, hi: 1 });
-    expect(conditional("Roll a D6. 1 to 3 = 1 random large item is lost")).toMatchObject({ lo: 1, hi: 3 });
-    expect(cardEffect("lose an extra 1 HP.", "prime").youDamage[0].mod).toBe(1);
+    expect(conditional("roll a D6. On a 2 to 4 lose an extra 2 HP.")).toEqual({ lo: 2, hi: 4, then: "lose an extra 2 HP." });
+    expect(conditional("Roll a D6. On a 1 visor glass cracks. Lose 1 MA.")).toMatchObject({ lo: 1, hi: 1 });
+    expect(conditional("Roll a D6. 1 to 3 = your pack tears and a random item falls out")).toMatchObject({ lo: 1, hi: 3 });
+    expect(cardEffect("lose an extra 2 HP.", "prime").youDamage[0].mod).toBe(2);
     expect(conditional("armour cannot deflect this attack.")).toBeNull();
   });
 });
@@ -235,7 +235,7 @@ describe("ranged combat", () => {
     expect(firingPlan(3, true)).toEqual(["you", "you"]);
   });
   it("Deflection Roll against red-boxed numbers: Primary 3s don't block Secondary 3s; best one (U27)", () => {
-    const a = { interrupts: [parseInterrupt("A on Primary 3s and 4s -1 damage")!, parseInterrupt("B on Secondary 2s and 3s -3 damage")!], deflection: [] as { die: "P" | "S"; value: number }[] };
+    const a = { interrupts: [parseInterrupt("A on Primary 4s and 3s -1 damage")!, parseInterrupt("B on Secondary 3s and 2s -3 damage")!], deflection: [] as { die: "P" | "S"; value: number }[] };
     a.deflection = parseDeflection("Primary 4s; Secondary 2s", a.interrupts);
     expect(alienDeflect(a, 4, 1)?.reduce).toBe(1);
     expect(alienDeflect(a, 3, 1)).toBeNull(); // 3s aren't red-boxed
@@ -338,14 +338,14 @@ describe("patrol SPECIAL from the Hulk turn", () => {
   it("applies HP, Shift, misses and attacks-first; leaves room-size rules to the player", () => {
     expect(patrolSpecial("It’s caught off guard and misses the first round.")).toMatchObject({ skip: true, roll: null });
     expect(patrolSpecial("Drops from the vents and attacks first.").first).toBe(true);
-    expect(patrolSpecial("-1 Shift in the first two rounds of combat as it wakes up.")).toMatchObject({ earlyShift: -1, earlyRounds: 2, shift: 0 });
-    expect(patrolSpecial("-1 Shift in the first round of combat.")).toMatchObject({ earlyShift: -1, earlyRounds: 1 });
+    expect(patrolSpecial("-2 Shift across the first two rounds while it shakes off the cold.")).toMatchObject({ earlyShift: -2, earlyRounds: 2, shift: 0 });
+    expect(patrolSpecial("-1 Shift during the first round only.")).toMatchObject({ earlyShift: -1, earlyRounds: 1 });
     expect(patrolSpecial("-1 Shift in a small room")).toMatchObject({ shift: 0, manual: "-1 Shift in a small room" });
     const roll = "Roll a D6. 4-6= It’s wounded and has -8 HP.";
     expect(patrolSpecial(roll)).toMatchObject({ roll: { lo: 4, hi: 6 }, hp: 0 });
     expect(patrolSpecial(roll, 5).hp).toBe(-8);
     expect(patrolSpecial(roll, 2).hp).toBe(0);
-    expect(patrolSpecial("Roll a D6 after the combat. 4-6= Another appears.")).toMatchObject({ roll: null, manual: expect.stringMatching(/Another/) });
+    expect(patrolSpecial("Roll a D6 after the combat. 5-6= Another drone arrives.")).toMatchObject({ roll: null, manual: expect.stringMatching(/Another/) });
     expect(patrolSpecial("")).toMatchObject({ hp: 0, applied: [] });
   });
 });

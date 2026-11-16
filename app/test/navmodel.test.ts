@@ -124,21 +124,22 @@ describe("treeFooter", () => {
 });
 
 describe("Map is a play tool", () => {
-  it("is in PLAY_TOOLS (after Realm) and so in the Play tree", () => {
-    expect(PLAY_TOOLS.map((t) => t.id)).toEqual(["dungeon", "combat", "sheet", "realm", "map", "achievements"]);
+  it("is in PLAY_TOOLS (after Realm and Lairs) and so in the Play tree", () => {
+    expect(PLAY_TOOLS.map((t) => t.id)).toEqual(["dungeon", "combat", "sheet", "realm", "lairs", "haunted", "map", "characters", "notes", "journal", "bestiary", "items", "tables", "achievements", "statistics"]);
     expect(PLAY_TOOLS.find((t) => t.id === "map")).toMatchObject({ title: "Map", icon: "map" });
     expect(playTree(PLAY_TOOLS).map((n) => n.href)).toContain("#/play/map");
+    expect(playTree(PLAY_TOOLS).map((n) => n.href)).not.toEqual(expect.arrayContaining(["#/play/items"])); // Characters, Bestiary, Items, Tables and Achievements live on the rail
   });
 });
 
 describe("newTabItems (the tab bar's + picker)", () => {
   it("lists Home, the play tools, Settings, then Search the books", () => {
     const items = newTabItems(PLAY_TOOLS);
-    expect(items.map((i) => i.label)).toEqual(["Home", "Dungeon turn", "Combat", "Character sheet", "Realm", "Map", "Achievements", "Settings", "Search the books…"]);
+    expect(items.map((i) => i.label)).toEqual(["Home", "Start Game", "Combat", "Character sheet", "Realm", "Lairs", "Haunted House", "Map", "Characters", "Notes", "Journal", "Bestiary", "Items", "Tables", "Achievements", "Statistics", "Settings", "Search the books…"]);
     expect(items.map((i) => i.route ?? i.action)).toEqual([
-      "#/", "#/play/dungeon", "#/play/combat", "#/play/sheet", "#/play/realm", "#/play/map", "#/play/achievements", "#/play/settings", "search",
+      "#/", "#/play/dungeon", "#/play/combat", "#/play/sheet", "#/play/realm", "#/play/lairs", "#/play/haunted", "#/play/map", "#/play/characters", "#/play/notes", "#/play/journal", "#/play/bestiary", "#/play/items", "#/play/tables", "#/play/achievements", "#/play/statistics", "#/play/settings", "search",
     ]);
-    expect(items.map((i) => i.icon)).toEqual(["book", "key", "swords", "scroll", "castle", "map", "trophy", "settings", "search"]);
+    expect(items.map((i) => i.icon)).toEqual(["book", "key", "swords", "scroll", "castle", "skull", "house", "map", "user", "notebook", "book-open", "skull", "backpack", "table", "trophy", "chart-column", "settings", "search"]);
   });
   it("follows the tool list it is given", () => {
     expect(newTabItems(tools).map((i) => i.id)).toEqual(["home", "combat", "settings", "search"]);

@@ -97,9 +97,22 @@ const runGit =
 
 const isLoopback = (a?: string) => !!a && (a === "::1" || a.startsWith("127.") || a === "::ffff:127.0.0.1");
 
+/**
+ * Whether a Host header names this machine directly: "localhost" (or a name under it) or an IP address, with
+ * or without a port. The dev middlewares run before Vite's own host check, so a page on some other site that
+ * re-points its domain at this machine (DNS rebinding) would otherwise reach them: its Host is a domain name.
+ */
+export function directHost(host: string | string[] | undefined): boolean {
+  if (typeof host !== "string" || !host) return false;
+  if (host.startsWith("[")) return /^\[[0-9a-f:.]+\](:\d+)?$/i.test(host); // an IPv6 address
+  const name = host.replace(/:\d+$/, "").toLowerCase();
+  return name === "localhost" || name.endsWith(".localhost") || /^\d{1,3}(\.\d{1,3}){3}$/.test(name);
+}
+
 /** Whether a request may use the endpoint: our header, and (when the browser says) from the app's own page. */
 export function allowed(h: Record<string, string | string[] | undefined>): boolean {
   if (h["x-2d6-update"] !== "1") return false;
+  if (!directHost(h.host)) return false;
   const site = h["sec-fetch-site"];
   if (site && site !== "same-origin") return false;
   const origin = h.origin;

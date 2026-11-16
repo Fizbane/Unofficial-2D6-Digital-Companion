@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { plotCardHtml, plotsForMap, rankText, type Bldg, type Land } from "../src/tools/realm";
-import { mapLegendHtml } from "../src/tools/rmap";
+import { freshRealm, kaladearFp, payTax, plotCardHtml, plotsForMap, rankText, removeBuilding, startBuilding, type Bldg, type Land } from "../src/tools/realm";
+import { fairIndex, mapLegendHtml } from "../src/tools/rmap";
 import { html } from "../src/ui/html";
 
 const land = (over: Partial<Land>): Land => ({
@@ -48,5 +48,60 @@ describe("plot card and map legend helpers", () => {
     const h = String(mapLegendHtml(["SH", "RI"]));
     expect(h).toContain("background:#9fb57a");
     expect(h).toContain("border-top:3px solid #3f7fc4");
+  });
+});
+
+describe("payTax", () => {
+  it("pays from silver, then breaks gold and gives change", () => {
+    expect(payTax({ gc: 5, sc: 30, cc: 0 }, 25)).toEqual({ gc: 5, sc: 5, cc: 0 });
+    expect(payTax({ gc: 5, sc: 3, cc: 0 }, 25)).toEqual({ gc: 2, sc: 8, cc: 0 });
+  });
+  it("uses copper last, and never goes into debt", () => {
+    expect(payTax({ gc: 0, sc: 3, cc: 250 }, 25)).toEqual({ gc: 0, sc: 0, cc: 30 });
+    expect(payTax({ gc: 0, sc: 3, cc: 0 }, 25)).toBeNull();
+    expect(payTax({ gc: 1, sc: 3, cc: 0 }, 25)).toBeNull();
+  });
+});
+
+describe("fairIndex", () => {
+  it("gives each of four options the same share of a D6, re-rolling 5 and 6", () => {
+    const counts = [0, 0, 0, 0];
+    for (let first = 1; first <= 6; first++)
+      for (let second = 1; second <= 4; second++) {
+        const rolls = [first, second];
+        counts[fairIndex(4, () => rolls.shift() ?? 1)]++;
+      }
+    expect(new Set(counts).size).toBe(1);
+  });
+  it("uses every face for two, three and six options", () => {
+    for (const n of [2, 3, 6]) {
+      const counts = Array(n).fill(0);
+      for (let v = 1; v <= 6; v++) counts[fairIndex(n, () => v)]++;
+      expect(new Set(counts).size).toBe(1);
+    }
+  });
+});
+
+describe("Kaladear favour and corruption", () => {
+  it("counts only the boxes corruption hasn't crossed out", () => {
+    expect(kaladearFp({ kaladear: 6, corruption: 0 })).toBe(6);
+    expect(kaladearFp({ kaladear: 6, corruption: 3 })).toBe(3);
+    expect(kaladearFp({ kaladear: 2, corruption: 3 })).toBe(2);
+    expect(kaladearFp({ kaladear: 6, corruption: 6 })).toBe(0);
+    expect(kaladearFp({ kaladear: 6, corruption: 10 })).toBe(0);
+  });
+});
+
+describe("removing a building", () => {
+  it("gives its plot back the Building Points and rank it took", () => {
+    const s = freshRealm();
+    s.gc = 100;
+    s.lands.push({ id: 1, tag: "3LA", claimed: true, owner: "", size: 2, rank: 2, rankMod: 0, bp: 6 } as never);
+    const b = startBuilding(s, { name: "Mill", cost: 30, size: 2, rank: 1, hp: 4, workers: 0 } as never, "3LA", 30);
+    expect([s.lands[0].bp, s.lands[0].rankMod]).toEqual([4, 1]);
+    removeBuilding(s, b.id);
+    expect([s.lands[0].bp, s.lands[0].rankMod]).toEqual([6, 0]);
+    expect(s.buildings).toEqual([]);
+    expect(s.gc).toBe(70); // the gold stays spent
   });
 });

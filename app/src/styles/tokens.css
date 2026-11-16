@@ -35,8 +35,8 @@
    --backdrop, --backdrop-fallback and --glow inline; the values below are pre-JS fallbacks. */
 :root {
   /* type */
-  --font-display: "Cormorant Garamond", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --font-read: "Crimson Pro", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-display: "Cinzel", Georgia, serif; /* headings (Settings → Fonts can change it; Void defaults to Orbitron) */
+  --font-read: "Alegreya", Georgia, serif;
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --eyebrow-size: 0.7rem;
   --eyebrow-tracking: 0.14em;

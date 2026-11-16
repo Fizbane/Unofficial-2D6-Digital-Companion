@@ -27,7 +27,8 @@ import { load, save, hasSaved } from "../common";
 import { byId } from "../../library";
 import { bus } from "../../shell/events";
 import type { Table } from "../../types";
-import { arr as varr, bool, num as vnumber, obj, oneOf, opt, rec, str, type V } from "../../lock/validate";
+import { arr as varr, bool, jsonValue, num as vnumber, obj, oneOf, opt, rec, str, type V } from "../../lock/validate";
+import { normaliseEquipped, sumMods, type Equipped } from "../gear";
 
 // ---------- professions ----------
 export const PROFESSIONS = ["Freighter Captain", "Space Police Officer", "Bounty Hunter"] as const;
@@ -37,7 +38,7 @@ export const isProfession = (p: unknown): p is Profession => PROFESSIONS.include
 export const SPECIAL_SKILLS: Record<Profession, { name: string; effect: string }> = {
   "Freighter Captain": { name: "Improvisation", effect: "−1 from the roll on a Technical check that involves improvising a device." },
   "Space Police Officer": { name: "Security Expert", effect: "−1 from the roll on a Coding check that involves extracting data." },
-  "Bounty Hunter": { name: "Fast Recovery", effect: "When Stunned, reduce the Stunned value by 1 (Stunned 5 becomes Stunned 4)." },
+  "Bounty Hunter": { name: "Fast Recovery", effect: "Each Stun you take is one less (a Stun of 5 counts as 4)." },
 };
 
 const LEVELS_SECTION: Record<Profession, string> = {
@@ -195,7 +196,7 @@ export function armourPiece(r: Pick<ArmourRow, "name" | "dice" | "mod">): Armour
   return { name: r.name, dice: r.dice, mod: r.mod, yellow: defaultYellow(r.name, r.dice) };
 }
 
-// Body-part words: "items that feature the same words like pairs of gloves, helmets, jackets, overalls, suits or plates" [void p13].
+// Body-part words: two pieces with the same word (gloves, helmet, jacket, overalls, suit, plate) go on the same body part [void p13].
 const PART_WORDS: [RegExp, string][] = [
   [/\b(gloves?|gauntlets?)\b/i, "hands"],
   [/\b(helmet|helm)\b/i, "head"],
@@ -276,7 +277,7 @@ export function weaponFromCard(id: string): RangedWeapon | null {
   };
 }
 
-/** The C-12 Pistol with one caseless block of 12 rounds [void p39]. */
+/** The starting C-12 Pistol, loaded with a single 12-round caseless block [void p39]. */
 export function startingPistol(): RangedWeapon {
   const w = weaponFromCard("void/p39-7") ?? {
     name: "C-12 Pistol", size: "small", damage: "D6", settings: "Single", ammo: 12, capacity: 12, ammoType: "Caseless block",
@@ -344,8 +345,8 @@ export interface Effect {
 // ---------- STE ----------
 export const STE_TASKS = [
   { id: "fixMachine", name: "Fix Machine", skill: "technical", def: "A physical intervention that makes a machine work again." },
-  { id: "recogniseFunction", name: "Recognise Function", skill: "technical", def: "Recognise how something physical works to solve a problem." },
-  { id: "improviseDevice", name: "Improvise Device", skill: "technical", def: "Physically put something together that performs a function you use (throwing weapons count)." },
+  { id: "recogniseFunction", name: "Recognise Function", skill: "technical", def: "Work out what a physical thing does, and use that to get past a problem." },
+  { id: "improviseDevice", name: "Improvise Device", skill: "technical", def: "Build something with your hands that does a job you then use (thrown weapons included)." },
   { id: "crackCode", name: "Crack Code", skill: "coding", def: "Codes on devices, not security door codes." },
   { id: "reprogramme", name: "Reprogramme", skill: "coding", def: "Change something's function through coding." },
   { id: "extractData", name: "Extract Data", skill: "coding", def: "Successfully retrieve useful data from a computer." },
@@ -375,7 +376,7 @@ export interface VoidCharacter {
   meleeBonus: number; // +damage to all manoeuvres (e.g. Tendon Amp)
   marksmanship: number; // permanent value: start 6, max 10
   marksTemp: number; // this Hulk level only (e.g. RFUT1 10: −2)
-  rangedHits: number; // 0–9 ticks on the Ranged Hits bar
+  rangedHits: number; // 0–9 ticks on the Ranged Hits bar (the 10th tick pays out and clears it)
   manoeuvres: Manoeuvre[];
   armour: ArmourPiece[]; // worn, max 3
   ranged: RangedWeapon[]; // max 3: 2 small + 1 large
@@ -393,6 +394,7 @@ export interface VoidCharacter {
   bio: string[]; // bio enhancements (benefit notes); a 7th fails the mission
   access: { alpha: number; beta: number; gamma: number };
   large: string[]; // 10 large / heavy item slots
+  equipped?: Equipped[]; // pack items worn or wielded, with the bonuses each gives (gear.ts); absent = none
   small: string;
   equipment: string; // starting equipment (can't be lost)
   quests: SideQuest[];
@@ -403,7 +405,7 @@ export interface VoidCharacter {
 }
 
 export const STARTING_EQUIPMENT =
-  "Flashlight, Stim Dock, Sample Scanner, Hacking Console (HC-5), wrench, crowbar, portable 3D printer, 2 plastic pockets, camo tent, backpack";
+  "Backpack, camo tent, crowbar, Flashlight, Hacking Console (HC-5), plastic pockets ×2, portable 3D printer, Sample Scanner, Stim Dock, wrench"; // the starting kit, A–Z
 
 export function newVoidCharacter(profession: Profession = "Freighter Captain"): VoidCharacter {
   return {
@@ -464,6 +466,8 @@ export function normaliseVChar(d: Partial<VoidCharacter> | null | undefined): Vo
     c[k] = n0(c[k], base[k]);
   c.xp = Math.max(0, Math.floor(c.xp));
   c.marksmanship = clamp(n0(c.marksmanship, 6), 0, MARKS_MAX);
+  c.equipped = normaliseEquipped(c.equipped);
+  c.rangedHits = clamp(Math.floor(c.rangedHits), 0, RANGED_HITS_BAR - 1);
   c.level = Number.isInteger(d.level) && d.level! > 0 ? d.level! : levelOf(c.profession, c.xp);
   c.manoeuvres = arr<Manoeuvre>(c.manoeuvres, []).filter((m) => m && m.name).slice(0, 3);
   c.armour = arr<ArmourPiece>(c.armour, [])
@@ -513,6 +517,7 @@ export const validateVChar: (x: unknown) => Partial<VoidCharacter> = (x) =>
       bio: opt(varr(vstr(), 10)), access: opt(obj({ alpha: vnum, beta: vnum, gamma: vnum })), large: opt(varr(vstr(), 10)),
       small: opt(vstr(20000)), equipment: opt(vstr(5000)), quests: opt(varr(obj<SideQuest>({ text: vstr(), done: bool }), 100)),
       narrative: opt(vstr(50000)), notes: opt(vstr(50000)), tentUses: opt(vnum),
+      equipped: opt(varr(jsonValue(3), 50)) as never, // cleaned by normaliseEquipped
       portrait: opt(str(400000, /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]*$/)),
     },
     { extra: true },
@@ -528,9 +533,10 @@ export function saveVChar(c: VoidCharacter, source = "vsheet") {
 }
 
 // ---------- derived stats ----------
-/** Sum of the active effects' modifiers. */
+/** Sum of the active effects' modifiers, plus the bonuses of equipped items. */
 export function effectMods(c: VoidCharacter) {
-  const m = { tech: 0, coding: 0, shift: 0, marks: 0 };
+  const eq = sumMods(c.equipped);
+  const m = { tech: eq.tech, coding: eq.coding, shift: eq.shift, marks: eq.marks };
   for (const e of c.effects) {
     m.tech += e.tech ?? 0;
     m.coding += e.coding ?? 0;
@@ -700,14 +706,26 @@ export function reload(c: VoidCharacter, i: number): number {
 
 // ---------- marksmanship ----------
 export const RANGED_HITS_BAR = 10;
+export type RangedHitResult = { filled: boolean; capped: boolean; xp: number; level: LevelChange };
 /** Tick the Ranged Hits bar (once per different enemy). Full: +1 Marksmanship (max 10), clear, +100 XP per level. */
-export function addRangedHit(c: VoidCharacter): { filled: boolean; xp: number; level: LevelChange } {
-  c.rangedHits += 1;
-  if (c.rangedHits < RANGED_HITS_BAR) return { filled: false, xp: 0, level: { from: c.level, to: c.level, hpDelta: 0 } };
+export function addRangedHit(c: VoidCharacter): RangedHitResult {
+  return setRangedHits(c, c.rangedHits + 1);
+}
+/** Set the bar to n ticks (a box ticked by hand). Reaching the end pays out exactly as a hit does. */
+export function setRangedHits(c: VoidCharacter, n: number): RangedHitResult {
+  c.rangedHits = clamp(Math.floor(n), 0, RANGED_HITS_BAR);
+  if (c.rangedHits < RANGED_HITS_BAR) return { filled: false, capped: false, xp: 0, level: { from: c.level, to: c.level, hpDelta: 0 } };
   c.rangedHits = 0;
+  const capped = c.marksmanship >= MARKS_MAX;
   c.marksmanship = Math.min(MARKS_MAX, c.marksmanship + 1);
   const xp = 100 * vstats(c).level;
-  return { filled: true, xp, level: addXp(c, xp) };
+  return { filled: true, capped, xp, level: addXp(c, xp) };
+}
+/** Toast text for a filled bar. */
+export function rangedBarText(c: VoidCharacter, r: RangedHitResult): string {
+  return r.capped
+    ? `Ranged hits bar full: Marksmanship is already at its max of ${MARKS_MAX}, +${r.xp} XP.`
+    : `Ranged hits bar full: Marksmanship ${c.marksmanship}, +${r.xp} XP.`;
 }
 
 // ---------- capacity ----------

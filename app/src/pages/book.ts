@@ -7,6 +7,7 @@ import { rollColumns } from "../dice";
 import { exportFixes, getFixes, saveFix, undoFixes, type FixField } from "../fixes";
 import { rollOnTable, tableBySection } from "../rolltable";
 import { icon } from "../ui/icon";
+import { CREATURE_TYPES } from "../creaturetypes";
 import { card, eyebrow } from "../ui/components";
 import { cardHtml, handleCardClick, logTableRoll } from "../shell/panels/results";
 import { parseRoute } from "../shell/routes";
@@ -41,8 +42,9 @@ const namedInner = (un: ReadonlySet<string> | undefined, key: string, inner: Raw
 
 const ed = (b: number, f: FixField, r?: number, c?: number) => html`contenteditable="true" spellcheck="false" data-fix="${b}|${f}|${r ?? ""}|${c ?? ""}"`;
 
-function renderTable(t: Table, selfId: string, idx: number, edit = false, un?: ReadonlySet<string>): Raw {
+function renderTable(t: Table, selfId: string, idx: number, edit = false, un?: ReadonlySet<string>, source = ""): Raw {
   const h: Raw[] = [];
+  if (!edit && isFieldCard(t)) return renderCard(t, selfId, idx, un, source);
   if (edit) {
     h.push(html`<figure class="table-wrap editing">`);
     if (t.intro !== undefined && t.intro !== null) h.push(html`<p class="intro" ${ed(idx, "intro")}>${t.intro}</p>`);
@@ -54,7 +56,7 @@ function renderTable(t: Table, selfId: string, idx: number, edit = false, un?: R
   }
   const rcs = t.dice ? rollColumns(t.rows) : [];
   const rollable = rcs.length > 0;
-  h.push(html`<figure class="table-wrap" data-idx="${idx}" ${rollable ? html`data-dice="${t.dice!}" data-rc="${rcs.join(",")}"` : ""}>`);
+  h.push(html`<figure class="table-wrap${isFieldCard(t) ? " creature-card" : ""}" data-idx="${idx}" ${rollable ? html`data-dice="${t.dice!}" data-rc="${rcs.join(",")}"` : ""}>`);
   if (t.title && t.continued) h.push(html`<figcaption${flagged(un, `${idx}:title`)}>${t.title} <span class="muted">(continued)</span>${flagBtn(un, `${idx}:title`)}</figcaption>`);
   const code = t.code;
   // header: code chip and the dice badge (which is the Roll button when the table can be rolled)
@@ -64,13 +66,133 @@ function renderTable(t: Table, selfId: string, idx: number, edit = false, un?: R
         ? html`<button type="button" class="dice-badge roll-btn" data-roll="${idx}" title="Roll ${t.dice!} on this table" aria-label="Roll ${t.dice!} on this table">${icon("dice", { size: 16 })}<span>${t.dice!}</span></button>`
         : t.dice ? html`<span class="dice-badge is-static">${t.dice}</span>` : ""
     }</div>`);
-  if (t.intro) h.push(html`<p${flagged(un, `${idx}:intro`, "intro")}>${inline(t.intro, selfId)}${flagBtn(un, `${idx}:intro`)}</p>`);
+  const cardIntro = isFieldCard(t) && !!t.intro;
+  if (t.intro && !cardIntro) h.push(html`<p${flagged(un, `${idx}:intro`, "intro")}>${inline(t.intro, selfId)}${flagBtn(un, `${idx}:intro`)}</p>`);
   h.push(html`<div class="scroll"><table><thead><tr>${t.columns.map((c, ci) => html`<th${flagged(un, `${idx}:-1:${ci}`)}${namedAttr(un, `${idx}:-1:${ci}`)}>${namedInner(un, `${idx}:-1:${ci}`, inline(c, selfId))}</th>`)}</tr></thead><tbody>`);
-  t.rows.forEach((r, ri) => h.push(html`<tr>${r.map((c, ci) => html`<td${flagged(un, `${idx}:${ri}:${ci}`)}>${inline(c, selfId)}${flagBtn(un, `${idx}:${ri}:${ci}`)}</td>`)}</tr>`));
+  const shown = (ri: number, ci: number) => (ci === 1 && /^LEVEL/i.test(t.rows[ri][0].trim()) ? typeNames(t.rows[ri][1]) : t.rows[ri][ci]);
+  const cell = (ri: number, ci: number, cls = "", span = 1) => html`<td${cls ? html` class="${cls}"` : ""}${span > 1 ? html` colspan="${span}"` : ""}${flagged(un, `${idx}:${ri}:${ci}`)}>${inline(shown(ri, ci), selfId)}${flagBtn(un, `${idx}:${ri}:${ci}`)}</td>`;
+  const runs = statRuns(t);
+  const total = Math.max(t.columns.length, ...runs.map((r) => (r.length > 1 ? r.length * 2 : 0))); // cells in the widest row
+  const introRow = html`<tr class="cc-desc"><td colspan="2"${flagged(un, `${idx}:intro`, "intro")}>${inline(t.intro!, selfId)}${flagBtn(un, `${idx}:intro`)}</td></tr>`;
+  let introDone = !cardIntro;
+  for (const run of runs) {
+    if (!introDone && /MISHAP|PRIME/i.test(t.rows[run[0]][0])) { h.push(introRow); introDone = true; }
+    const rc = isFieldCard(t) ? ` ${rowClass(t.rows[run[0]][0])}` : "";
+    if (run.length === 1) h.push(html`<tr class="${rc.trim()}">${t.rows[run[0]].map((_, ci, a) => cell(run[0], ci, ci === 0 && rc ? "stat-label" : "", ci === a.length - 1 ? total - ci : 1))}</tr>`);
+    else h.push(html`<tr class="stat-row${rc}">${run.map((ri, k) => html`${cell(ri, 0, "stat-label")}${cell(ri, 1, "", k === run.length - 1 ? total - (run.length * 2 - 1) : 1)}`)}</tr>`);
+  }
+  if (!introDone) h.push(introRow);
   if (t.blank_rows) h.push(html`<tr><td colspan="${t.columns.length}" class="muted">+ ${t.blank_rows} blank rows</td></tr>`);
   h.push(html`</tbody></table></div>`);
   if (t.notes) h.push(html`<p${flagged(un, `${idx}:notes`, "notes")}>${inline(t.notes, selfId)}${flagBtn(un, `${idx}:notes`)}</p>`);
   return html`${h}</figure>`;
+}
+
+// ---------- creature cards ----------
+const titleCase = (s: string) => s.toLowerCase().replace(/(^|[\s(/'‘-])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
+const sentence = (s: string) => { const t = s.trim().toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); };
+/** "L1 {circled R}" → its level and its type: the type's name where the book's symbol table gives one, else the circled letter. */
+function levelParts(s: string): { level: string; type: string } {
+  const m = s.match(/\{(?:circled )?([A-Z])(?: symbol)?\}/);
+  const level = s.replace(/\{[^}]*\}/g, "").trim();
+  if (!m) return { level, type: "" };
+  return { level, type: CREATURE_TYPES[m[1]] ?? String.fromCodePoint(0x24b6 + m[1].charCodeAt(0) - 65) };
+}
+/** Where a card's rows go, by label: the stat strip, the two outcome boxes, the description, or the list (in this order). */
+const CARD_ORDER = ["INTERRUPT", "MANOEUVRES", "MANOEUVRE", "DEFLECTION", "RANGED WEAPON", "CACHE", "TREASURE", "LOOT"];
+const cardRank = (label: string) => { const i = CARD_ORDER.indexOf(label); return i < 0 ? CARD_ORDER.length : i; };
+
+/**
+ * A creature card (a Field | Value table with NAME and HP): its name and level across the top, the picture
+ * (added by ui/art when there is one) and description on the left, and on the right HP / XP / SP / SH, the
+ * labelled rows, and the mishap and prime attack rolls. Every value keeps its "not verified" flag.
+ */
+export function renderCard(t: Table, selfId: string, idx: number, un: ReadonlySet<string> | undefined, source: string): Raw {
+  const rows = t.rows.map((r, ri) => ({ ri, label: (r[0] ?? "").trim().toUpperCase(), value: r[1] ?? "" }));
+  const find = (re: RegExp) => rows.find((r) => re.test(r.label));
+  const name = find(/^NAME$/)!;
+  const level = find(/^LEVEL/);
+  const stats = rows.filter((r) => /^(HP|XP|SP|SH)$/.test(r.label));
+  const desc = find(/^DESCRIPTION$/);
+  const outcomes = rows.filter((r) => /MISHAP|PRIME/.test(r.label));
+  const used = new Set([name, level, desc, ...stats, ...outcomes]);
+  // the rest, in the card's order; rows with the same label (two manoeuvres) share one row
+  const listed = new Map<string, typeof rows>();
+  for (const r of rows.filter((x) => !used.has(x)).sort((a, b) => cardRank(a.label) - cardRank(b.label))) listed.set(r.label, [...(listed.get(r.label) ?? []), r]);
+
+  const key = (ri: number, ci = 1) => `${idx}:${ri}:${ci}`;
+  const val = (r: { ri: number }, tag: "dd" | "p" | "span" | "div", cls: string, inner: Raw) =>
+    tag === "dd" ? html`<dd${flagged(un, key(r.ri), cls)}>${inner}${flagBtn(un, key(r.ri))}</dd>`
+    : tag === "p" ? html`<p${flagged(un, key(r.ri), cls)}>${inner}${flagBtn(un, key(r.ri))}</p>`
+    : tag === "div" ? html`<div${flagged(un, key(r.ri), cls)}>${inner}${flagBtn(un, key(r.ri))}</div>`
+    : html`<span${flagged(un, key(r.ri), cls)}>${inner}${flagBtn(un, key(r.ri))}</span>`;
+  // "[3][6] - ACID SPRAY = D6 -2" → dice, the name in bold, the damage; "Parry on Primary 3s…" → the name in bold
+  const line = (label: string, text: string): Raw => {
+    if (label.startsWith("MANOEUVRE")) {
+      const m = text.match(/^((?:\[\d\])+)\s*[-–]\s*(.+?)\s*=\s*(.+)$/);
+      if (m) return html`${inline(m[1], selfId)} <strong>${titleCase(m[2])}</strong> · ${inline(m[3], selfId)}`;
+    }
+    if (label === "INTERRUPT") {
+      const m = text.match(/^(.+?)\s+(on (?:Primary|Secondary)\b.*)$/i);
+      if (m) return html`<strong>${m[1]}</strong> ${inline(m[2], selfId)}`;
+    }
+    return inline(text, selfId);
+  };
+  const lines = (r: { label: string; value: string }): Raw[] =>
+    (r.label === "INTERRUPT" ? r.value.split(/\s*\|\s*/) : [r.value]).filter((x) => x.trim()).map((x) => html`<span class="crc-line">${line(r.label, x)}</span>`);
+  const lv = level ? levelParts(level.value) : null;
+  const sideText = desc ? val(desc, "p", "crc-desc", inline(desc.value, selfId))
+    : t.intro ? html`<p${flagged(un, `${idx}:intro`, "crc-desc")}>${inline(t.intro, selfId)}${flagBtn(un, `${idx}:intro`)}</p>` : "";
+
+  return html`<figure class="table-wrap creature-card" data-idx="${idx}" data-name="${name.value}">
+    <header class="crc-head">
+      <div class="crc-title">${source ? html`<span class="eyebrow">${source}</span>` : ""}<h3${flagged(un, key(name.ri), "crc-name")}>${titleCase(name.value)}${flagBtn(un, key(name.ri))}</h3></div>
+      ${lv ? val(level!, "span", "crc-level", html`${lv.level}${lv.type ? html` <span class="crc-type">${lv.type}</span>` : ""}`) : ""}
+    </header>
+    <div class="crc-body">
+      <div class="crc-side"><div class="crc-art"></div>${sideText}</div>
+      <div class="crc-main">
+        ${stats.length ? html`<dl class="crc-stats">${stats.map((r) => html`<div><dt>${r.label}</dt>${val(r, "dd", "", inline(r.value, selfId))}</div>`)}</dl>` : ""}
+        ${listed.size ? html`<dl class="crc-rows">${[...listed].map(([label, rs]) => html`<div class="crc-row"><dt>${label}</dt><div class="crc-vals">${rs.map((r) => val(r, "dd", "", html`${lines(r)}`))}</div></div>`)}</dl>` : ""}
+        ${outcomes.map((r) => {
+          const dice = r.label.match(/^((?:\[\d\])+)\s*(.*)$/);
+          return html`<div class="crc-roll ${/MISHAP/.test(r.label) ? "is-mishap" : "is-prime"}"><strong>${dice ? html`${inline(dice[1], selfId)} ${sentence(dice[2])}` : sentence(r.label)}</strong>${val(r, "p", "", inline(r.value, selfId))}</div>`;
+        })}
+      </div>
+    </div>
+    ${t.notes ? html`<p${flagged(un, `${idx}:notes`, "notes")}>${inline(t.notes, selfId)}${flagBtn(un, `${idx}:notes`)}</p>` : ""}
+  </figure>`;
+}
+
+/** "L1 {circled H}" → "L1 Humanoid" (the letters are the Creature Type Symbols table's). */
+const typeNames = (s: string): string => s.replace(/\{(?:circled )?([A-Z])\}/g, (m, l: string) => CREATURE_TYPES[l] ?? m);
+
+/** Row indexes in display order: on a creature card (Field | Value) NAME + LEVEL and HP + XP + SH share a row. */
+/** A creature card: a Field | Value table with a NAME and an HP row (drawn like the game's card). */
+const isFieldCard = (t: Table): boolean =>
+  t.columns.length === 2 && t.columns.map((c) => c.trim().toLowerCase()).join("|") === "field|value" &&
+  ["NAME", "HP"].every((l) => t.rows.some((r) => r[0]?.trim().toUpperCase() === l));
+/** The card row a label belongs to (its colour and place in the card). */
+function rowClass(label: string): string {
+  const l = label.toUpperCase();
+  return l === "NAME" ? "cc-name" : l === "HP" ? "cc-stats" : l === "TREASURE" ? "cc-treasure" : l === "INTERRUPT" ? "cc-interrupt"
+    : l.startsWith("MANOEUVRE") ? "cc-man" : l === "DESCRIPTION" ? "cc-desc" : /MISHAP/.test(l) ? "cc-mishap" : /PRIME/.test(l) ? "cc-prime" : "cc-other";
+}
+
+function statRuns(t: Table): number[][] {
+  const out: number[][] = [];
+  const isCard = isFieldCard(t);
+  const lab = (i: number) => (isCard ? t.rows[i]?.[0]?.trim().toUpperCase() ?? "" : "");
+  for (let i = 0; i < t.rows.length; i++) {
+    if (lab(i) === "NAME" && lab(i + 1) === "LEVEL") out.push([i, ++i]);
+    else if (lab(i) === "HP") {
+      const run = [i];
+      for (const l of ["XP", "SH"]) if (lab(i + run.length) === l) run.push(i + run.length);
+      out.push(run);
+      i += run.length - 1;
+    } else out.push([i]);
+  }
+  return out;
 }
 
 export function renderBlocks(s: Section, edit = false, un?: ReadonlySet<string>, prefix?: string): Raw {
@@ -99,7 +221,7 @@ export function renderBlocks(s: Section, edit = false, un?: ReadonlySet<string>,
         h.push(html`<li${flagged(un, `${i}:para`)}>${inline(b.text.replace(/^[-•]\s/, ""), s.id)}${flagBtn(un, `${i}:para`)}</li>`);
       } else h.push(html`<p${flagged(un, `${i}:para`)}>${inline(b.text, s.id)}${flagBtn(un, `${i}:para`)}</p>`);
     } else if (b.type === "heading") h.push(html`<h3${flagged(un, `${i}:heading`)}${namedAttr(un, `${i}:heading`)}>${namedInner(un, `${i}:heading`, inline(b.text, s.id))}</h3>`);
-    else if (b.type === "table") h.push(renderTable(b.table, s.id, i, false, un));
+    else if (b.type === "table") h.push(renderTable(b.table, s.id, i, false, un, `${bookInfo(s.book).name} · p. ${s.pages.join(", ")}`));
     else if (b.type === "image")
       h.push(html`<figure class="page-img card"><figcaption class="muted">Page ${b.page} – not yet transcribed, showing the original page</figcaption><img loading="lazy" ${b.src ? html`src="${b.src}"` : html`data-pg="${s.book}/${b.page}"`} alt="Page ${b.page}"></figure>`);
   });
@@ -244,6 +366,8 @@ export function render(root: HTMLElement, ctx: ToolContext, route: string) {
   const $ = <T extends HTMLElement>(sel: string) => root.querySelector(sel) as T;
 
   const draw = () => {
+    // the page header's Fix text button follows the mode
+    queueMicrotask(() => root.dispatchEvent(new Event("fixmode")));
     const book = books.get(s.book)!;
     const all = lib.sections.filter((x) => x.book === s.book);
     const i = all.indexOf(s);

@@ -1,4 +1,5 @@
 // Combat helper for 2D6 Dungeon (rules: docs/spec-dungeon.md §3).
+import { typeName } from "../creaturetypes";
 import type { ToolContext } from "../main";
 import type { Section } from "../types";
 import { rollDice } from "../dice3d";
@@ -10,10 +11,13 @@ import { bus } from "../shell/events";
 import { rollAndLog } from "../shell/panels/results";
 import { button, card, chip, eyebrow, statBlock } from "../ui/components";
 import { icon, type IconName } from "../ui/icon";
+import { artThumb } from "../ui/art";
 import { em, logHtml, span, strong, type LogEntry, type LogNode } from "./combatlog";
+import { addFind, afterFight, readFind, type AfterStep, type Done } from "./loot";
 export { logHtml, type LogEntry, type LogNode } from "./combatlog";
 import { isCreatureTable, load, save } from "./common";
-import { LEVELS, levelOf, loadChar, saveChar, stats } from "./sheet";
+import { baseHpFn, hasExpansion, levelFn, levelTitle, loadChar, saveChar, stats } from "./sheet";
+import { attemptSucceeds, attemptXp, combatAbilities, companionReady, foeXp } from "./companionmodel";
 import { addXp, levelChangeText } from "../shell/charmodel";
 import { html, joinHtml, type Raw, setHTML } from "../ui/html";
 import { playSfx } from "../audio/sound";
@@ -170,13 +174,43 @@ interface State {
   phase: "setup" | "you" | "foes" | "won" | "lost";
   target: number | null;
   attack: { p: number; s: number } | null; // your current attack roll awaiting a choice
-  foeTurn: number; // index into living foes for the enemy phase
+  foeTurn: number; // how many foes have attacked this enemy phase
+  /** Ids of the foes that have attacked this enemy phase: next is the first living one that hasn't, so a foe dying mid-phase can't make another skip. */
+  acted: number[];
+  /** "They attack first": a round is foes then you, so it ends after your attack. */
+  foesFirst: boolean;
   killedRound1: boolean;
   log: (LogEntry | string)[]; // a `string` was saved as markup by an older version: shown as plain text
   nextId: number;
   xpBanked: boolean;
+  /** The animal companion in this fight: uses of each ability slot, the round it last acted, the foes it finished. */
+  comp?: { uses: Record<string, number>; acted: number; kills: number[] };
+  /** After a won fight: what each treasure step gave (loot.ts afterFight keys). */
+  loot?: Record<string, Done>;
+  /** The page the fight was started from ("Continue playing" goes back there). */
+  from?: string;
+  /** The player chose to stay on Combat once everything was collected. */
+  stayed?: boolean;
 }
-const fresh = (): State => ({ foes: [], round: 1, fatigue: 1, phase: "setup", target: null, attack: null, foeTurn: 0, killedRound1: false, log: [], nextId: 1, xpBanked: false });
+const fresh = (): State => ({ foes: [], round: 1, fatigue: 1, phase: "setup", target: null, attack: null, foeTurn: 0, acted: [], foesFirst: false, killedRound1: false, log: [], nextId: 1, xpBanked: false });
+
+/**
+ * Add the creature card in `section` to the fight being set up (from another tool, e.g. Lairs). Returns a
+ * message when it can't: a fight is already under way, or the section holds no creature card. A fight
+ * that is over (won or lost) is cleared for the new one.
+ */
+export function queueFoe(section: Section | undefined, from?: string): string | null {
+  const c = section ? creatureIndex([section])[0] : undefined;
+  if (!c) return "That creature's card couldn't be read. Add it in Combat by hand.";
+  let st = load<State>("combat", fresh());
+  if (st.phase === "won" || st.phase === "lost") st = fresh(); // the last fight is over: this one starts a new setup
+  if (st.phase !== "setup") return "A fight is already under way in Combat. Finish it first.";
+  st.foes.push({ ...c, id: st.nextId++, hpNow: c.hp });
+  if (from) st.from = from;
+  save("combat", st);
+  bus.emit("combat:changed", { source: "queue" });
+  return null;
+}
 
 export function render(root: HTMLElement, ctx: ToolContext) {
   // free creatures, plus those of unlocked books; anything else can be entered by hand
@@ -208,8 +242,21 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     bus.emit("combat:changed", { source: "combat" });
   };
   const log = (...n: LogNode[]) => st.log.unshift({ r: st.round, n });
+  /** The tables a treasure text names (free, unlocked, or still locked). */
+  const treasureTables = (text: string) => [
+    ...followOns(text).map((o) => ({ code: o.ref.table.code ?? o.ref.key, modifier: o.modifier })),
+    ...lockedFollowOns(text).map((o) => ({ code: o.code, modifier: 0, locked: true })),
+  ];
+  const lockedOf = (code: string) => {
+    const x = tableByCode(code);
+    return isLockedTable(x) ? x.locked : undefined;
+  };
+  /** What is left to do after this won fight (loot.ts). */
+  const afterSteps = () => afterFight(st.foes, treasureTables, st.xpBanked, st.loot ?? {});
   const inline = (t: string) => ctx.inline(t);
   const alive = () => st.foes.filter((f) => f.hpNow > 0);
+  /** The next foe to attack this enemy phase, or undefined when all the living ones have. */
+  const nextFoe = () => alive().find((f) => !st.acted.includes(f.id));
 
   const youShift = () => {
     const base = stats(loadChar()).shift;
@@ -235,7 +282,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     const dead = f.hpNow <= 0;
     const targeted = st.target === f.id && !dead;
     return html`<div class="foe ${dead ? "dead" : ""} ${targeted ? "targeted" : ""}" data-foe="${f.id}">
-      <div class="foe-head"><div class="foe-name"><strong>${f.name}</strong><span class="muted">L${f.level}${f.type ? ` ${f.type}` : ""} · SH ${signed(f.sh)} · ${f.xp} XP</span></div>
+      <div class="foe-head">${artThumb(f.name)}<div class="foe-name"><strong>${f.name}</strong><span class="muted">L${f.level}${f.type ? ` ${typeName(f.type)}` : ""} · SH ${signed(f.sh)} · ${f.xp} XP</span></div>
         ${
           dead
             ? html`<span class="badge">${icon("skull", { size: 13 })} defeated</span>`
@@ -258,14 +305,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
   function setupView() {
     const q = query.trim().toLowerCase();
     const list = all.filter((c) => !q || c.name.toLowerCase().includes(q) || `l${c.level}` === q).slice(0, 60);
-    return html`${card(
-      html`<label class="cb-search-wrap">${icon("search", { size: 17 })}<input id="cb-search" class="cb-search" placeholder="Search creatures (name, or L3 for level 3)" value="${query}"></label>
-      <div class="cb-list">${list.length ? list
-        .map((c) => html`<button class="cb-pick" data-add="${c.key}"><strong>${c.name}</strong><span class="muted">L${c.level} · ${c.hp} HP · SH ${signed(c.sh)}</span></button>`) : html`<p class="muted">No creature matches.</p>`}</div>
-      ${manualFormHtml(manual, manualOpen)}`,
-      { eyebrow: "Setup", title: "Who are you fighting?" },
-    )}
-      ${
+    return html`${
         st.foes.length
           ? card(
               html`<div class="foes">${st.foes.map(foeCard)}</div>
@@ -275,7 +315,14 @@ export function render(root: HTMLElement, ctx: ToolContext) {
               { eyebrow: `Foes (${st.foes.length})`, title: "Ready to fight" },
             )
           : ""
-      }`;
+      }
+      ${card(
+      html`<label class="cb-search-wrap">${icon("search", { size: 17 })}<input id="cb-search" class="cb-search" placeholder="Search creatures (name, or L3 for level 3)" value="${query}"></label>
+      <div class="cb-list">${list.length ? list
+        .map((c) => html`<button class="cb-pick" data-add="${c.key}"><strong>${c.name}</strong><span class="muted">L${c.level}${c.type ? ` ${typeName(c.type)}` : ""} · ${c.hp} HP · SH ${signed(c.sh)}</span></button>`) : html`<p class="muted">No creature matches.</p>`}</div>
+      ${manualFormHtml(manual, manualOpen)}`,
+      { eyebrow: "Setup", title: "Who are you fighting?" },
+    )}`;
   }
 
   /** The attack card for your current roll: tone + body. */
@@ -290,7 +337,9 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         tone: "prime",
         body: html`<div class="rc-title">${icon("zap", { size: 20 })} [6][6] Prime Attack!</div>
         <div class="rc-text">Pick any manoeuvre as if performed exactly. Your total Shift (${pts}) is added, and interrupts and armour can't reduce it.</div>
-        <div class="man-grid">${mans.map((m, i) => chip(m.name, { icon: "zap", value: `${dmgText(m.dmg)} +${pts}`, attrs: html`data-hit="${i}" data-prime="1"` }))}</div>`,
+        <div class="man-grid">${mans.map((m, i) => chip(m.name, { icon: "zap", value: `${dmgText(m.dmg)} +${pts}`, attrs: html`data-hit="${i}" data-prime="1"` }))}</div>
+        ${mans.length ? "" : html`<div class="rc-text">Your sheet has no manoeuvres with a dice set, so there is nothing to perform. Add them on the Character sheet.</div>
+        <div class="rc-actions">${button("Continue", { size: "lg", attrs: html`data-act="miss"` })}</div>`}`,
       };
     const opts = reachable(a.p, a.s, mans, pts);
     // every manoeuvre, reachable ones first (cheapest first); the rest greyed out with the Shift they'd need
@@ -339,7 +388,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
           tone: "accent",
         });
     } else if (st.phase === "foes") {
-      const f = living[st.foeTurn];
+      const f = nextFoe();
       action = f
         ? card(html`${last}<div class="step-actions">${button(`Roll for ${f.name} (D66)`, { icon: "dice", size: "lg", variant: "primary", attrs: html`data-act="foe-attack"` })}</div>`, {
             eyebrow: `Round ${st.round} · Their turn`,
@@ -349,30 +398,51 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         : "";
     } else if (st.phase === "won") {
       const xp = st.foes.reduce((n, f) => n + f.xp, 0);
+      const steps = afterSteps();
+      const next = steps.find((s) => !s.done);
+      const lead = (s: AfterStep) => (s === next ? ("primary" as const) : undefined);
+      const stepHtml = (s: AfterStep, i: number): Raw => {
+        const foe = st.foes.find((f) => s.key.startsWith(`${f.id}:`));
+        const head = s.kind === "xp" ? "Experience" : `${s.foe} treasure`;
+        const what = s.kind === "xp" ? html`${xp} XP for the fight.` : s.kind === "table" && foe ? ctx.inline(foe.treasure) : s.kind === "coins" ? html`Coins its card gives as well: ${s.label.replace(/^(Roll|Add) /, "")}.` : html`${s.text ?? ""}`;
+        const act = s.done
+          ? ""
+          : s.kind === "xp"
+            ? button(`Add ${xp} XP to your sheet`, { icon: "plus", size: "lg", variant: lead(s), attrs: html`data-act="bank-xp"` })
+            : s.locked
+              ? html`${lockedCard(lockedOf(s.code!)!, true)}${button("Rolled it in my book", { icon: "book", variant: lead(s), attrs: html`data-loot-book="${s.key}"` })}`
+              : button(s.label, { icon: s.kind === "item" ? "plus" : "dice", size: "lg", variant: lead(s), attrs: html`data-loot="${s.key}"` });
+        const res = s.kind === "xp"
+          ? s.done ? html`<p class="ok">XP added.</p>` : ""
+          : s.result
+            ? html`${s.result.text ? html`<div class="rc-text">${ctx.inline(s.result.text)}</div>` : ""}
+              <p class="ok">${s.result.added.length ? `On your sheet: ${s.result.added.join(" · ")}.` : "Nothing to add."}</p>`
+            : "";
+        return html`<li class="after-step" data-state="${s.done ? "done" : s === next ? "current" : "upcoming"}">
+          <span class="step-marker" aria-hidden="true">${s.done ? icon("check", { size: 15 }) : i + 1}</span>
+          <div>${eyebrow(head)}<div class="rc-text">${what}</div>${res}${act ? html`<div class="step-actions">${act}</div>` : ""}</div></li>`;
+      };
       action = card(
-        html`<div class="step-actions">${button(st.xpBanked ? "XP added" : `Add ${xp} XP to your sheet`, { icon: st.xpBanked ? "check" : "plus", size: "lg", variant: st.xpBanked ? undefined : "primary", attrs: html`data-act="bank-xp"${st.xpBanked ? " disabled" : ""}` })}</div>
-        ${st.foes
-          .map(
-            (f) => html`<article class="result-card step-result"><header class="rc-head">${eyebrow(`${f.name} treasure`)}</header><div class="rc-text">${ctx.inline(f.treasure)}</div>
-          <div class="rc-actions">${followOns(f.treasure).map((o) => button(`Roll ${o.label}`, { icon: "dice", size: "sm", variant: "ghost", attrs: html`data-loot="${o.ref.key}|${o.modifier}"` }))}${
-            lockedFollowOns(f.treasure).map((o) => button(`🔒 ${o.code}`, { size: "sm", variant: "ghost", attrs: html`data-loot="${o.code}|0"` }))}</div></article>`,
-          )}
-        ${lockedMsg}
-        <p class="muted step-note">Now resolve the rest of the room. You can't take enemy weapons or armour.</p>`,
-        { eyebrow: `Round ${st.round} · All foes defeated`, title: "Victory!", titleIcon: "trophy", tone: "accent" },
+        html`<p class="after-lead">${next ? html`<strong>Next:</strong> ${next.kind === "xp" ? "add your XP" : next.kind === "item" ? `take the ${next.foe}'s treasure` : `roll for the ${next.foe}'s treasure`}.` : "Everything from this fight is on your sheet."}</p>
+        <ol class="after-steps">${steps.map(stepHtml)}</ol>
+        ${next ? "" : html`<div class="step-actions after-choice">
+          ${button("Continue playing", { icon: "compass", size: "lg", variant: st.stayed ? undefined : "primary", attrs: html`data-act="after-continue"` })}
+          ${st.stayed ? "" : button("Stay on Combat", { size: "lg", attrs: html`data-act="after-stay"` })}</div>`}
+        <p class="muted step-note">${next ? "Then resolve the rest of the room." : "Now resolve the rest of the room."} You can't take enemy weapons or armour.</p>`,
+        { eyebrow: `Round ${st.round} · All foes defeated`, title: "Victory!", titleIcon: "trophy", tone: "accent", attrs: html`data-after-fight` },
       );
     } else if (st.phase === "lost") {
       action = card(
         html`<p>Your HP is 0. In combat, if the enemy finishes you the adventure is over (see the rules). If you were brought to 0 by something other than an enemy, roll on RFUT1.</p>
-        <div class="step-actions">${button("RFUT1 (recovery)", { icon: "dice", size: "lg", attrs: html`data-loot="RFUT1|0"` })}</div>${lockedMsg}`,
+        <div class="step-actions">${button("RFUT1 (recovery)", { icon: "dice", size: "lg", attrs: html`data-roll-table="RFUT1"` })}</div>${lockedMsg}`,
         { eyebrow: `Round ${st.round}`, title: "You've fallen", titleIcon: "skull", tone: "danger" },
       );
     }
     const foeDmg = f0 ? [...f0.man].sort((x, y) => avg(x.dmg) - avg(y.dmg)) : [];
     const foeSide = f0
       ? card(
-          html`${statBlock([
-            ["Level", `L${f0.level}${f0.type ? ` ${f0.type}` : ""}`],
+          html`${artThumb(f0.name, "art-face")}${statBlock([
+            ["Level", `L${f0.level}${f0.type ? ` ${typeName(f0.type)}` : ""}`],
             ["HP", `${f0.hpNow} / ${f0.hp}`],
             ["Damage", foeDmg.length ? (foeDmg.length > 1 ? `${dmgText(foeDmg[0].dmg)} – ${dmgText(foeDmg[foeDmg.length - 1].dmg)}` : dmgText(foeDmg[0].dmg)) : "—"],
             ["Interrupts", f0.interrupts.length ? f0.interrupts.map((x) => x.name).join(", ") : f0.interruptText ? "Special" : "None"],
@@ -396,15 +466,25 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       <div class="combat-face">${foeSide}<div class="vs" aria-hidden="true">${icon("swords", { size: 20 })}</div>${youSide}</div>
       ${action}
       ${card(html`<div class="foes">${st.foes.map(foeCard)}</div>`, { eyebrow: `${living.length} of ${st.foes.length} standing`, title: "Foes" })}
-      ${card(html`<ol class="combat-log">${st.log.map((l) => html`<li>${logHtml(l, inline)}</li>`)}</ol>`, { eyebrow: `${st.log.length} event${st.log.length === 1 ? "" : "s"}`, title: "Combat log" })}`;
+      <div class="step-actions">${button(`Combat log (${st.log.length})`, { icon: "panel-right", size: "sm", variant: "ghost", attrs: html`data-act="show-log" title="The whole fight, in the side panel"` })}</div>`;
   }
 
+  let drawnPhase: string | null = null; // the phase of the last draw, so the trophy pops once, as the fight is won
   function draw() {
+    const justWon = st.phase === "won" && drawnPhase !== null && drawnPhase !== "won";
+    root.classList.toggle("just-won", justWon);
+    drawnPhase = st.phase;
+    // the fight is over: bring what is next into view (after this draw has put it on the page)
+    if (justWon) queueMicrotask(() => {
+      const card = root.querySelector<HTMLElement>("[data-after-fight]");
+      card?.scrollIntoView({ block: "center", behavior: "smooth" });
+      card?.querySelector<HTMLElement>(".btn-primary")?.focus({ preventScroll: true });
+    });
     setHTML(root, html`<header class="play-head">
-        <div class="play-title">${eyebrow(st.phase === "setup" ? "Play · Setup" : "Play")}<h1>${icon("swords", { size: 26 })}<span>Combat</span></h1></div>
+        <div class="play-title">${st.phase === "setup" ? eyebrow("Setup") : ""}<h1>${icon("swords", { size: 26 })}<span>Combat</span></h1></div>
         <div class="play-actions">${st.phase !== "setup" ? button(st.phase === "won" || st.phase === "lost" ? "New fight" : "End fight", { icon: st.phase === "won" || st.phase === "lost" ? "rotate-ccw" : "x", attrs: html`data-act="end"` }) : ""}
         <a class="btn btn-ghost" href="#/s/core%2Fcombat-sequence">${icon("book", { size: 17 })}<span>Combat rules</span></a></div></header>
-      ${st.phase === "setup" ? setupView() : fightView()}`);
+      ${st.phase === "setup" ? setupView() : html`${fightView()}${companionPanel()}`}`);
     if (st.phase === "setup") {
       const inp = root.querySelector<HTMLInputElement>("#cb-search");
       inp?.addEventListener("input", () => {
@@ -417,6 +497,73 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       });
     }
   }
+
+  // ---------- the animal companion (a character playing with the Companions book) ----------
+  const compState = () => (st.comp ??= { uses: {}, acted: 0, kills: [] });
+  function companionPanel(): Raw | "" {
+    const c = loadChar();
+    if (!hasExpansion(c, "companions") || !c.companion) return "";
+    const k = c.companion, cs = compState();
+    const name = k.name?.trim() || k.kind?.trim() || "Companion";
+    const fighting = st.phase === "you" || st.phase === "foes";
+    const dead = (parseInt(k.hp ?? "", 10) || 0) <= 0;
+    if (!companionReady(k) && !dead) return "";
+    const abilities = combatAbilities(k);
+    const downed = st.foes.filter((f) => f.hpNow <= 0);
+    return card(html`
+      <p class="muted sheet-hint">${name}: <strong>${dead ? "dead" : `${k.hp} HP`}</strong>${dead ? "" : html` ${button("", { icon: "minus", size: "sm", attrs: html`data-comp-hp="-1" aria-label="Companion loses 1 HP"` })} ${button("", { icon: "plus", size: "sm", attrs: html`data-comp-hp="1" aria-label="Companion gains 1 HP"` })}`} · ${k.xp || 0} XP</p>
+      ${fighting && !dead ? (abilities.length ? html`<div class="step-actions">${abilities.map((a) => {
+          const used = cs.uses[a.slot] ?? 0;
+          const off = used >= a.level || cs.acted === st.round;
+          return button(`${a.name} (${used}/${a.level})`, { icon: "zap", size: "sm", attrs: html`data-comp-try="${a.slot}"${off ? " disabled" : ""}` });
+        })}</div><p class="muted sheet-hint">One combat ability a round, before the enemy attacks. It works on a D6 higher than the round (now ${st.round}); an ability's level is how many times it can be used this fight. Apply its effect to the foe's HP yourself.</p>`
+        : html`<p class="muted">No combat abilities on your companion yet (set an ability's type to Combat).</p>`) : ""}
+      ${downed.length && !dead ? html`<div class="rows">${downed.map((f) => html`<label class="field"><span><input type="checkbox" data-comp-kill="${f.id}"${cs.kills.includes(f.id) ? " checked" : ""}${st.xpBanked ? " disabled" : ""}> ${name} landed the killing blow on ${f.name} (you get half its XP)</span></label>`)}</div>` : ""}
+      ${st.phase === "lost" && !dead ? html`<div class="step-actions">${button(`${name} takes the killing blow`, { icon: "heart", variant: "primary", attrs: html`data-comp-save` })}</div><p class="muted sheet-hint">Your companion dies in your place, and you go on without one.</p>` : ""}`,
+      { eyebrow: "Animal companion", title: name });
+  }
+  root.addEventListener("change", (e) => {
+    const el = e.target as HTMLInputElement;
+    if (el.dataset.compKill === undefined) return;
+    const cs = compState(), id = +el.dataset.compKill;
+    cs.kills = el.checked ? [...new Set([...cs.kills, id])] : cs.kills.filter((x) => x !== id);
+    persist();
+    draw();
+  });
+  root.addEventListener("click", async (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-comp-hp],[data-comp-try],[data-comp-save]");
+    if (!b) return;
+    const c = loadChar();
+    const k = c.companion;
+    if (!k) return;
+    if (b.dataset.compHp) k.hp = String(Math.max(0, (parseInt(k.hp ?? "", 10) || 0) + +b.dataset.compHp));
+    else if (b.dataset.compTry) {
+      const a = combatAbilities(k).find((x) => x.slot === +b.dataset.compTry!);
+      const cs = compState();
+      if (!a || cs.acted === st.round || (cs.uses[a.slot] ?? 0) >= a.level) return;
+      const r = await rollDice("D6");
+      if (!live) return;
+      const ok = attemptSucceeds(r.value, st.round);
+      cs.uses[a.slot] = (cs.uses[a.slot] ?? 0) + 1;
+      cs.acted = st.round;
+      const foe = st.foes.find((f) => f.id === st.target) ?? alive()[0];
+      const gained = foe ? attemptXp(a.level, +foe.level || 0) : 0;
+      if (gained) k.xp = String((parseInt(k.xp ?? "", 10) || 0) + gained);
+      log(strong([k.name?.trim() || "Companion"]), ` tries ${a.name}: rolled ${r.value} against round ${st.round}, `, ok ? strong(["it works"]) : span("tone-miss", ["too tired"]), ".");
+      ctx.toast(ok ? `${a.name} works. Apply its effect.` : `${a.name} fails this round.`);
+    } else if (b.dataset.compSave !== undefined) {
+      if (st.phase !== "lost") return;
+      k.hp = "0";
+      c.hp = Math.max(1, c.hp);
+      st.phase = alive().length ? "you" : "won";
+      log(strong([k.name?.trim() || "Your companion"]), " takes the killing blow and dies in your place.");
+      ctx.toast("Your companion saved you. Set your HP back to what it was before the blow.");
+      bus.emit("combat:saved", { by: k.name?.trim() || "companion" });
+    }
+    saveChar(c, "combat");
+    persist();
+    draw();
+  });
 
   function setYouHp(delta: number) {
     const c = loadChar();
@@ -434,20 +581,26 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       return;
     }
     if (!alive().some((f) => f.id === st.target)) st.target = alive()[0].id;
+    if (st.foesFirst) return endRound(); // they went first: your attack closes the round
     st.phase = "foes";
     st.foeTurn = 0;
+    st.acted = [];
   }
+  /** Both sides have acted: the next round begins with whoever went first. */
   function endRound() {
     st.round++;
     st.fatigue = Math.min(6, st.fatigue + 1);
-    st.phase = "you";
+    st.phase = st.foesFirst ? "foes" : "you";
+    st.foeTurn = 0;
+    st.acted = [];
     log(em(`Round ${st.round} begins. Fatigue die ${st.fatigue}.`));
   }
 
   async function yourHit(i: number, prime: boolean) {
     const m = myMans()[i];
-    const foe = st.foes.find((f) => f.id === st.target) ?? alive()[0];
-    const a = st.attack!;
+    const foe = alive().find((f) => f.id === st.target) ?? alive()[0]; // never a foe already down
+    if (!m || !foe || !st.attack) return;
+    const a = st.attack;
     const exact = !prime && m.a === a.p && m.b === a.s;
     if (prime || exact) bus.emit("combat:hit", { kind: prime ? "prime" : "exact" });
     const pts = youShift();
@@ -484,7 +637,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
   }
 
   async function foeAttack() {
-    const f = alive()[st.foeTurn];
+    const f = nextFoe();
     if (!f) return;
     const r = await rollDice("D66");
     const [p, s] = r.dice;
@@ -534,7 +687,10 @@ export function render(root: HTMLElement, ctx: ToolContext) {
       }
     }
     st.foeTurn++;
-    if (st.foeTurn >= alive().length) endRound();
+    st.acted.push(f.id);
+    if (nextFoe()) return;
+    if (st.foesFirst) st.phase = "you"; // they opened the round: you close it
+    else endRound();
   }
 
   root.addEventListener("click", async (e) => {
@@ -555,7 +711,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         if (c) st.foes.push({ ...c, id: st.nextId++, hpNow: c.hp });
       } else if (b.dataset.remove) st.foes = st.foes.filter((f) => f.id !== +b.dataset.remove!);
       else if (act === "start" || act === "start-foes") {
-        st = { ...fresh(), foes: st.foes, nextId: st.nextId, phase: act === "start" ? "you" : "foes", target: st.foes[0]?.id ?? null };
+        st = { ...fresh(), foes: st.foes, nextId: st.nextId, phase: act === "start" ? "you" : "foes", foesFirst: act === "start-foes", target: st.foes[0]?.id ?? null };
         log(em(`The fight begins${act === "start-foes" ? ". They attack first" : ""}. Fatigue die 1.`));
       } else if (act === "attack") {
         const r = await rollDice("D66");
@@ -572,27 +728,65 @@ export function render(root: HTMLElement, ctx: ToolContext) {
         const f = st.foes.find((x) => x.id === +b.dataset.fhp!)!;
         f.hpNow = Math.max(0, Math.min(f.hp, f.hpNow + +b.dataset.d!));
         if (!alive().length && st.phase !== "setup") st.phase = "won";
+        else if (alive().length && !alive().some((x) => x.id === st.target)) st.target = alive()[0].id; // the target went down by hand
+        // the last foe still to attack went down by hand: the enemy phase is over
+        if (st.phase === "foes" && alive().length && !nextFoe()) {
+          if (st.foesFirst) st.phase = "you";
+          else endRound();
+        }
       } else if (b.dataset.yhp) setYouHp(+b.dataset.yhp);
       else if (act === "bank-xp") {
         const c = loadChar();
-        const xp = st.foes.reduce((n, f) => n + f.xp, 0);
+        const lvlOf = levelFn(c);
+        // Lairs rule (this character plays with it): no XP from a creature below your level
+        const myLevel = lvlOf(c.xp);
+        const lowRule = hasExpansion(c, "lairs");
+        const earning = lowRule ? st.foes.filter((f) => !(+f.level < myLevel)) : st.foes;
+        const xp = earning.reduce((n, f) => n + foeXp(f.xp, !!st.comp?.kills.includes(f.id)), 0);
+        const skipped = st.foes.length - earning.length;
         // a level reached now gives its +10 HP at once (Core Rules: "the minute you have enough XP")
-        const ch = addXp(c, xp, levelOf);
+        const ch = addXp(c, xp, lvlOf, baseHpFn(c));
         saveChar(c, "combat");
         st.xpBanked = true;
-        const lvl = levelChangeText(ch, LEVELS[ch.to - 1].title);
+        const lvl = levelChangeText(ch, levelTitle(c, ch.to));
         if (ch.to > ch.from) playSfx("level-up");
-        ctx.toast(`+${xp} XP added to your sheet.${lvl ? ` ${lvl}` : ""}`);
+        ctx.toast(`+${xp} XP added to your sheet.${skipped ? ` ${skipped} lower-level ${skipped === 1 ? "creature gives" : "creatures give"} none.` : ""}${lvl ? ` ${lvl}` : ""}`);
         bus.emit("journal:fight", { phase: "xp", xp });
       } else if (b.dataset.loot) {
-        const [code, mod] = b.dataset.loot.split("|");
-        const ref = tableByCode(code);
-        if (isTableRef(ref)) {
-          const r = await rollAndLog(ref, +mod || 0, undefined, "Treasure");
-          if (st.phase === "won" && r.rowIndex >= 0) bus.emit("journal:fight", { phase: "loot", text: r.cells[1] || `${ref.title} ${r.value}` });
-        } else if (isLockedTable(ref)) lockedMsg = lockedCard(ref.locked);
-        else ctx.toast(`Couldn't find table ${code}.`);
-      } else if (act === "end") {
+        const step = afterSteps().find((s) => s.key === b.dataset.loot && !s.done);
+        if (!step) return;
+        let text = step.text ?? "";
+        if (step.kind === "table") {
+          const ref = tableByCode(step.code!);
+          if (!isTableRef(ref)) return ctx.toast(`Couldn't find table ${step.code}.`);
+          const r = await rollAndLog(ref, step.modifier ?? 0, undefined, "Treasure");
+          text = r.rowIndex >= 0 ? r.cells.slice(1).filter(Boolean).join(" ") : "";
+          if (r.rowIndex >= 0) bus.emit("journal:fight", { phase: "loot", text: r.cells[1] || `${ref.title} ${r.value}` });
+        }
+        // put what it gives on the sheet: coins are rolled here, potions and other finds are written in
+        const find = readFind(text);
+        const amounts: number[] = [];
+        for (const k of find.coins) amounts.push((k.dice ? (await rollDice(k.dice)).value : 0) + k.flat);
+        const c = loadChar();
+        const added = addFind(c, find, amounts);
+        if (added.length) saveChar(c, "combat");
+        (st.loot ??= {})[step.key] = { text: step.kind === "table" ? text : "", added };
+        ctx.toast(added.length ? `Added to your sheet: ${added.join(" · ")}` : "Nothing to add to your sheet.");
+      } else if (b.dataset.rollTable) {
+        // a table rolled from the page as it is (recovery after a lost fight)
+        const ref = tableByCode(b.dataset.rollTable);
+        if (isTableRef(ref)) await rollAndLog(ref, 0, undefined, "Recovery");
+        else if (isLockedTable(ref)) lockedMsg = lockedCard(ref.locked);
+        else ctx.toast(`Couldn't find table ${b.dataset.rollTable}.`);
+      } else if (b.dataset.lootBook) {
+        (st.loot ??= {})[b.dataset.lootBook] = { text: "", added: ["rolled in your book: add what you found by hand"] };
+      } else if (act === "after-stay") st.stayed = true;
+      else if (act === "after-continue") {
+        persist();
+        ctx.openTab(st.from ?? "#/play/dungeon");
+        return;
+      } else if (act === "show-log") ctx.showPanel("combat");
+      else if (act === "end") {
         if (st.phase !== "won" && st.phase !== "lost" && !confirm("End this fight?")) return;
         st = fresh();
       }
@@ -612,6 +806,11 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     bus.on("combat:changed", ({ source }) => {
       if (source === "combat") return;
       const saved = load<State>("combat", fresh());
+      if (source === "queue") {
+        // another tool added a foe to the fight being set up: take the saved state whole
+        st = saved;
+        return draw();
+      }
       if (saved.fatigue === st.fatigue) return;
       st.fatigue = saved.fatigue;
       draw();

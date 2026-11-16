@@ -226,6 +226,32 @@ describe("check-dist run", () => {
   });
 });
 
+describe("check-dist and 2D6 Void's phrase list", () => {
+  const withLists = (voidList?: unknown[]) => {
+    const d = dist({ "a.js": "a quiet hulk drifts in the dark" });
+    const work = mkdtempSync(join(tmpdir(), "phr-"));
+    dirs.push(work);
+    writeFileSync(join(work, "phrases.json"), JSON.stringify([{ phrase: "nothing that is in the build at all", where: "codex/x#0" }]));
+    if (voidList) writeFileSync(join(work, "phrases-void.json"), JSON.stringify(voidList));
+    return { d, phrasesFile: join(work, "phrases.json") };
+  };
+  it("scans with it when it is there", () => {
+    const { d, phrasesFile } = withLists([{ phrase: "a quiet hulk drifts in the dark", where: "void/x#0" }]);
+    const r = check({ dist: d, phrasesFile, require: true });
+    expect(r.code).toBe(1);
+    expect(r.findings.some((f: string) => f.includes("void/x#0"))).toBe(true);
+  });
+  it("says so loudly when it is missing, and fails when lists are required", () => {
+    const { d, phrasesFile } = withLists();
+    const soft = check({ dist: d, phrasesFile, require: false });
+    expect(soft.code).toBe(0);
+    expect(soft.warnings.join("\n")).toContain("phrases-void.json");
+    const hard = check({ dist: d, phrasesFile, require: true });
+    expect(hard.code).toBe(1);
+    expect(hard.findings.join("\n")).toContain("2D6 Void phrase list missing");
+  });
+});
+
 describe("check-dist final fixes", () => {
   it("never prints an offending manifest key, nor a key on the path below it", () => {
     const key = "The wizard hums softly tonight";

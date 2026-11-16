@@ -83,6 +83,13 @@ export async function remapAfterStart(): Promise<number> {
 let subscribed = false;
 
 /**
+ * Sections kept out of the library (tree, search, cross-links), by opaque page id. Tools can still read
+ * them through the content gateway. companions/p35-1 is the blank printed companion sheet: the character
+ * sheet's Companion card replaces it.
+ */
+export const HIDDEN_SECTIONS: ReadonlySet<string> = new Set(["companions/p35-1"]);
+
+/**
  * Refill `lib`, `byId`, `books`, the cross-link terms, search and the roll-table index from the
  * free and unlocked sections. Runs again whenever content changes (an import or a lock).
  * `lib` and `byId` are refilled in place, so references held by pages stay current.
@@ -94,6 +101,7 @@ export function rebuildLibrary(): void {
   }
   const sections: Section[] = [];
   for (const id of sectionIds()) {
+    if (HIDDEN_SECTIONS.has(id)) continue;
     const r = getContent(id);
     if (r?.ok) sections.push(r.section);
   }
@@ -101,12 +109,13 @@ export function rebuildLibrary(): void {
   // the manifest's books, in its order, that have anything to show (free, unlocked or locked);
   // free.json's entry when it has one (title, page scans), else the manifest's name
   const has = new Set([...sections.map((s) => s.book), ...m.sections.map((s) => s.book)]);
-  // (2D6 Void has no manifest: its library file's books, as listed there)
-  lib.books = isVoid()
-    ? freeBooks().filter((b) => has.has(b.slug))
-    : m.books
-        .filter((b) => has.has(b.slug))
-        .map((b) => freeBooks().find((x) => x.slug === b.slug) ?? { slug: b.slug, title: bookInfo(b.slug).name, missing_pages: [], page_images: [] });
+  // then any book only the free/library file names (2D6 Void's local library build, read without a manifest)
+  lib.books = [
+    ...m.books
+      .filter((b) => has.has(b.slug))
+      .map((b) => freeBooks().find((x) => x.slug === b.slug) ?? { slug: b.slug, title: bookInfo(b.slug).name, missing_pages: [], page_images: [] }),
+    ...freeBooks().filter((b) => has.has(b.slug) && !m.books.some((x) => x.slug === b.slug)),
+  ];
   lib.sections = sections;
   books.clear();
   lib.books.forEach((b) => books.set(b.slug, b));

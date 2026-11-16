@@ -138,7 +138,11 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
       }, 60_000);
     });
     set({ s: "checking" });
-    await b.check();
+    try {
+      await b.check();
+    } catch {
+      set({ s: "error", message: "Couldn't check for updates. Try again later." }); // this also settles `done`
+    }
     return done;
   }
   set({ s: "checking" });
@@ -166,8 +170,12 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
 export async function installUpdate(): Promise<UpdateStatus> {
   const b = bridge();
   if (b) {
-    if (status.s === "ready") await b.install();
-    else await b.download();
+    try {
+      if (status.s === "ready") await b.install();
+      else await b.download();
+    } catch {
+      set({ s: "error", message: "The update could not be downloaded or installed. Try again later." });
+    }
     return status;
   }
   if (status.s !== "available" || !status.canUpdate) return status;

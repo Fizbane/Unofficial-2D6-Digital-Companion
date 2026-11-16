@@ -8,6 +8,12 @@
 .map-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font: 0.75rem var(--sans); color: var(--muted); }
 .map-legend i { display: inline-block; width: 14px; height: 6px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 
+.map-room-reference { margin-top: 12px; font: 0.85rem/1.4 var(--font-ui); }
+.map-room-reference h3 { margin: 0 0 6px; font: 600 0.9rem/1.4 var(--font-ui); }
+.map-room-reference ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+.map-room-reference li { display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.map-room-reference b { flex: none; min-width: 1.4em; text-align: center; font-variant-numeric: tabular-nums; background: var(--surface-solid); border-radius: 3px; }
+
 .map-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 /* separate map window (rendered into #app, no shell) */
 body.map-only #app { padding: 10px; }
@@ -34,6 +40,7 @@ body.map-only #app { padding: 10px; }
 .level-pick { display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 0 0 var(--space-2); border: var(--hairline); border-radius: var(--radius); background: var(--surface); }
 .level-pick select { font: 600 0.9rem var(--font-ui); color: var(--ink); background: transparent; border: 0; border-left: var(--hairline); padding: 6px var(--space-2); min-height: 2.1rem; cursor: pointer; }
 .level-pick select option { background: var(--surface-solid); color: var(--ink); }
+.play-status > .portrait-lg { width: 64px; height: 64px; flex: none; }
 .play-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); padding: var(--space-3) var(--space-4); }
 .pstat { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .pstat .eyebrow { line-height: 1.1; }
@@ -42,7 +49,7 @@ body.map-only #app { padding: 10px; }
 .pstat.is-warn .pstat-v, .pstat.is-warn .eyebrow { color: var(--accent); }
 .pstat-link { margin-left: auto; text-decoration: none; }
 .hp-bar.mini { display: inline-block; width: 64px; height: 6px; margin: 0 0 0 var(--space-2); }
-.hp-bar.mini > span { display: block; height: 100%; background: var(--accent); }
+.hp-bar.mini > span { display: block; height: 100%; background: var(--danger); }
 
 .room-head { margin: var(--space-5) 0 var(--space-3); }
 .room-head h2 { font: 600 1.8rem/1.1 var(--font-display); margin: 2px 0 0; font-variant-numeric: lining-nums; }
@@ -176,3 +183,37 @@ body.map-only #app { padding: 10px; }
 body:has(.dturn-divider.is-dragging) { user-select: none; cursor: col-resize; }
 /* narrow (stacked): no divider, but the swap still puts the map below the steps */
 @media not all and (min-width: 900px) { .dturn-grid.is-swapped > .dturn-map { order: 3; } }
+
+/* narration: what the player sees or what happens to them, as a chat bubble that draws the eye */
+.narrate { position: relative; margin: var(--space-3) 0 var(--space-4); padding: 0; }
+.narrate-who { font: 700 0.72rem/1.2 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px 14px; }
+.narrate-text {
+  position: relative; margin: 0; padding: var(--space-3) var(--space-4); border-radius: 16px 16px 16px 4px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-solid)); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  font: italic 1.08rem/1.55 var(--font-read); color: var(--ink); box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+.narrate-text::before { content: "\201C"; position: absolute; left: 8px; top: -6px; font: 700 2.4rem/1 var(--font-display); color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.narrate-text::after { /* the bubble's tail */
+  content: ""; position: absolute; left: 14px; bottom: -9px; width: 14px; height: 14px; transform: rotate(45deg);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-solid)); border-right: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+/* the popout: the same bubble, large, over a dimmed page, with focus on Continue */
+.modal-card.narrate-modal { max-width: 34rem; background: transparent; border: 0; box-shadow: none; padding: 0; animation: narrate-pop 0.45s cubic-bezier(.2,.9,.25,1.2) both; }
+.narrate-big { margin: 0 0 var(--space-3); }
+.narrate-big .narrate-who { font-size: 0.8rem; color: #fff; }
+.narrate-big .narrate-text { font-size: 1.3rem; line-height: 1.6; padding: var(--space-4) var(--space-5, 24px); box-shadow: 0 12px 40px rgb(0 0 0 / 0.55), 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+.narrate-actions { display: flex; justify-content: flex-end; }
+@keyframes narrate-pop { from { opacity: 0; transform: translateY(14px) scale(0.92); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .modal-card.narrate-modal { animation: none; } }
+.narrate-modal > h2 { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* named for screen readers only */
+
+/* Fight buttons are red, filled: the one thing in a room that can hurt you (a fixed red: the theme's danger colour is pale in dark mode) */
+.btn[data-fight] { background: #c42b1c; border-color: #c42b1c; color: #fff; font-weight: 700; }
+.btn[data-fight]:hover { background: #a82217; border-color: #a82217; }
+.btn[data-fight]:focus-visible { outline: 3px solid #ff9d90; outline-offset: 2px; }
+
+
+.dungeon-grid-size { margin: 0 0 12px; padding: 0; border: 0; }
+.dungeon-grid-size legend { margin-bottom: 6px; font: 600 .9rem/1.4 var(--font-ui); }
+.dungeon-grid-fields { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.dungeon-grid-fields .field { width: min(8rem, 100%); }

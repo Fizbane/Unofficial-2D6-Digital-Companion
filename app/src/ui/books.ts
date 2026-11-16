@@ -1,6 +1,7 @@
 // Settings → Books: each book's status, "Unlock a book…" (the owner's PDF, read on this device by the import
 // Worker), progress with Cancel, the report, and Lock / forget my books.
-import { LockedDuringImport, addUnlocked, bookInfo, getContent, lockAll, lockGeneration, manifest, onContentChange, storeAvailable } from "../content";
+import { settingsSection } from "./settingsnav";
+import { LockedDuringImport, addUnlocked, bookInfo, bookName, hasFreeEdition, devOpen, lockAll, lockGeneration, manifest, onContentChange, storeAvailable, unlockedRows } from "../content";
 import type { ImportProgress, ImportReport } from "../lock/importer";
 import { remapLegacy } from "../lock/legacy";
 import type { FromWorker, ImportPaths, ToWorker } from "../lock/import.worker";
@@ -11,7 +12,9 @@ import { ValidationError } from "../lock/validate";
 import { gameId } from "../games";
 import { bus } from "../shell/events";
 import { button } from "./components";
+import { toolsOfBook } from "../tools/common";
 import { html, type Raw, setHTML } from "./html";
+import { supportNoteBody } from "./supportnote";
 import { here, isDesktop } from "../shell/platform";
 
 /** The part of a Worker the Books UI uses (a fake one in tests). */
@@ -49,6 +52,25 @@ let partial = new Set<string>();
 const redraws = new Set<() => void>();
 const redraw = () => { for (const fn of [...redraws]) fn(); };
 
+/** Development only (Dungeon): unlock every addon book from the local whole-book build, no PDFs needed. */
+const devUnlockButton = (canStore: boolean): Raw | "" =>
+  import.meta.env.DEV && gameId() === "dungeon"
+    ? button("Unlock all books (dev)", { icon: "key-round", variant: "ghost", attrs: html`data-books="dev-unlock"${job || !canStore ? " disabled" : ""} title="Development only: unlocks every book from pipeline/work, as if each PDF were imported"` })
+    : "";
+async function devUnlockAll(): Promise<void> {
+  try {
+    const r = await fetch("dev/unlock.json");
+    if (!r.ok) throw new Error(await r.text());
+    const list = (await r.json()) as Parameters<typeof addUnlocked>[0];
+    await addUnlocked(list);
+    report = `Dev: unlocked ${list.length} sections from the local build. "Lock / forget my books" locks them again.`;
+  } catch (e) {
+    report = `Dev unlock failed (needs pipeline/work/library-full.json and id-map.json): ${e instanceof Error ? e.message : String(e)}`;
+  }
+  await refreshBookState();
+  redraw();
+}
+
 /** Reloads what the status lines need from the device store (BookRecords and resume points). */
 export async function refreshBookState(): Promise<void> {
   try {
@@ -69,10 +91,12 @@ export async function refreshBookState(): Promise<void> {
 /** Called by the locked cards' Unlock… button: open Books with this book noted. */
 export function noteUnlock(book: string | undefined): void {
   hint = book ?? null;
+  settingsSection("books"); // Settings shows one section at a time
   redraw();
   // Settings may still be opening: try for a few frames. The visible Settings page's card wins.
   let tries = 20;
   const scroll = () => {
+    settingsSection("books"); // a Settings page that was opening has drawn by now
     const el = [...document.querySelectorAll<HTMLElement>("#books")].find((x) => x.offsetParent !== null);
     if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
     else if (--tries > 0) requestAnimationFrame(scroll);
@@ -88,7 +112,7 @@ const moduleWorker = (): WorkerLike =>
   new Worker(new URL("../lock/import.worker.ts", import.meta.url), { type: "module" }) as unknown as WorkerLike;
 
 const n = (x: number) => x.toLocaleString("en-GB");
-const nameOf = (slug: string) => manifest().books.find((b) => b.slug === slug)?.name ?? slug;
+const nameOf = (slug: string) => bookName(slug);
 
 function reportHtml(r: ImportReport): Raw {
   if (r.kind === "free") return html`That's the free version of the book. Its tables are already included, so there is nothing to unlock.`;
@@ -173,6 +197,7 @@ export function startImport(file: Blob, o: { worker?: () => WorkerLike; paths?: 
     ended = true;
     quiet();
     if (!j.locking) report = h;
+    void refreshBookState(); // a stall or a Worker error leaves pages in the store too: show "partly read", not "locked"
     worker.terminate();
     if (job === j) job = null;
     settle();
@@ -199,7 +224,7 @@ export function startImport(file: Blob, o: { worker?: () => WorkerLike; paths?: 
       end(errorHtml(m));
     }
   };
-  worker.onerror = () => end(`The import could not start in ${here()}.`);
+  worker.onerror = () => end(j.progress ? `The import stopped unexpectedly in ${here()}. Pick the PDF again to carry on from where it stopped.` : `The import could not start in ${here()}.`);
   worker.onmessageerror = () => end(`The import stopped: ${here()} could not pass the reader's messages.`);
   watch();
   worker.postMessage({ type: "start", file, manifest: manifest(), paths: o.paths ?? pagePaths(), game: gameId() });
@@ -255,15 +280,13 @@ export function bookStatus(slug: string): string {
   if (!b || b.free) return "Free · included";
   if (partial.has(slug)) return "Partly read: pick the PDF again to finish";
   const sections = manifest().sections.filter((s) => s.book === slug);
-  const open = sections.filter((s) => getContent(s.id)?.ok).length;
-  if (!open) return "🔒 Locked";
+  // only what the owner's PDF unlocked: in development the local library opens a locked book's sections too
+  const open = sections.filter((s) => unlockedRows(s.id)).length;
+  if (!open) return sections.some((s) => devOpen(s.id)) ? "🔒 Locked · readable here from the development library" : "🔒 Locked";
   const part = open < sections.length ? "Partly unlocked" : "Unlocked";
   const ed = editions.get(slug);
   if (!ed) return part;
-  const { rows, verified } = rowCounts(sections, ed, (id) => {
-    const c = getContent(id);
-    return c?.ok ? c.unverified ?? new Set() : undefined;
-  });
+  const { rows, verified } = rowCounts(sections, ed, unlockedRows);
   return `${part} · ${n(verified)} of ${n(rows)} rows verified`;
 }
 
@@ -379,7 +402,7 @@ function claudeHtml(): Raw {
   const books = manifest().books.filter((b) => !b.free);
   const rows = html`${books.map((b) => {
     const slug = b.slug;
-    return html`<div class="step-actions" data-claude-book="${slug}"><span><em>${b.name}</em></span><label class="muted">Rows <select data-claude="scope" aria-label="Rows to export for ${b.name}"><option value="unverified"${scopes.get(b.slug) !== "all" ? " selected" : ""}>Unverified</option><option value="all"${scopes.get(b.slug) === "all" ? " selected" : ""}>All</option></select></label>${button("Export rows to check", { icon: "download", variant: "ghost", size: "sm", attrs: html`data-claude="export" data-book="${slug}"` })}${button("Import checked rows", { icon: "upload", variant: "ghost", size: "sm", attrs: html`data-claude="import" data-book="${slug}"` })}</div>`;
+    return html`<div class="step-actions" data-claude-book="${slug}"><span><em>${bookName(b.slug)}</em></span><label class="muted">Rows <select data-claude="scope" aria-label="Rows to export for ${b.name}"><option value="unverified"${scopes.get(b.slug) !== "all" ? " selected" : ""}>Unverified</option><option value="all"${scopes.get(b.slug) === "all" ? " selected" : ""}>All</option></select></label>${button("Export rows to check", { icon: "download", variant: "ghost", size: "sm", attrs: html`data-claude="export" data-book="${slug}"` })}${button("Import checked rows", { icon: "upload", variant: "ghost", size: "sm", attrs: html`data-claude="import" data-book="${slug}"` })}</div>`;
   })}`;
   const list = pending?.items.length
     ? html`<ul class="claude-mismatch">${pending.items.map((it) =>
@@ -424,8 +447,10 @@ export function renderBooks(host: HTMLElement): () => void {
     const books = manifest().books;
     const canStore = storeAvailable();
     const asked = hint ? books.find((b) => b.slug === hint) : undefined;
-    setHTML(host, html`<ul class="book-status">${books.map((b) =>
-        html`<li data-book="${b.slug}"${asked?.slug === b.slug ? html` class="is-asked"` : ""}><strong>${b.name}</strong> <span class="muted">${bookStatus(b.slug)}</span></li>`)}</ul>${(asked ? html`<p class="books-hint">🔒 Open your <em>${asked.name}</em> PDF to unlock</p>` : "")}<input type="file" accept=".pdf,application/pdf" data-books="file" hidden><div class="step-actions">${button("Unlock a book…", { icon: "key-round", variant: "primary", attrs: html`data-books="pick"${job || !canStore ? " disabled" : ""}` })}${button("Lock / forget my books", { icon: "trash", variant: "danger", attrs: html`data-books="lock"` })}</div>${(job ? html`<div class="books-progress" role="status">${progressHtml(job.progress)}${button("Cancel", { icon: "x", variant: "ghost", size: "sm", attrs: html`data-books="cancel"` })}</div>` : "")}${(report ? html`<p class="books-report" role="status">${report}</p>` : "")}${(canStore ? "" : html`<p class="muted set-note">Saved books can't be read in this browser mode, so nothing can be unlocked here.</p>`)}${claudeHtml()}<p class="muted set-note">Your PDF is read on this device only: it is never uploaded. Once a book is unlocked the app keeps what it needs, so the PDF isn't needed again.</p>`);
+    // the Codex is two entries: "Codex Free" (built in, shown until the full book is unlocked) and "Codex Full"
+    const freeRows = books.filter((b) => hasFreeEdition(b.slug) && !bookInfo(b.slug).unlocked).map((b) => html`<li data-book="${b.slug}-free"><strong>Codex Free</strong> <span class="muted">Free · included</span></li>`);
+    setHTML(host, html`${supportNoteBody()}<ul class="book-status">${freeRows}${books.map((b) =>
+        html`<li data-book="${b.slug}"${asked?.slug === b.slug ? html` class="is-asked"` : ""}><strong>${bookName(b.slug)}</strong> <span class="muted">${bookStatus(b.slug)}${toolsOfBook(b.slug).length ? ` · adds ${toolsOfBook(b.slug).join(", ")}` : ""}</span></li>`)}</ul>${(asked ? html`<p class="books-hint">🔒 Open your <em>${bookName(asked.slug)}</em> PDF to unlock</p>` : "")}<input type="file" accept=".pdf,application/pdf" data-books="file" hidden><div class="step-actions">${button("Unlock a book…", { icon: "key-round", variant: "primary", attrs: html`data-books="pick"${job || !canStore ? " disabled" : ""}` })}${button("Lock / forget my books", { icon: "trash", variant: "danger", attrs: html`data-books="lock"` })}${devUnlockButton(canStore)}</div>${(job ? html`<div class="books-progress" role="status">${progressHtml(job.progress)}${button("Cancel", { icon: "x", variant: "ghost", size: "sm", attrs: html`data-books="cancel"` })}</div>` : "")}${(report ? html`<p class="books-report" role="status">${report}</p>` : "")}${(canStore ? "" : html`<p class="muted set-note">Saved books can't be read in this browser mode, so nothing can be unlocked here.</p>`)}${claudeHtml()}<p class="muted set-note">Your PDF is read on this device only: it is never uploaded. Once a book is unlocked the app keeps what it needs, so the PDF isn't needed again.</p>`);
   };
   const onClick = (e: Event) => {
     const c = (e.target as HTMLElement).closest<HTMLElement>("[data-claude]");
@@ -439,6 +464,7 @@ export function renderBooks(host: HTMLElement): () => void {
     if (act === "pick") host.querySelector<HTMLInputElement>('[data-books="file"]')?.click();
     else if (act === "cancel") cancel();
     else if (act === "lock") void lockBooks();
+    else if (import.meta.env.DEV && act === "dev-unlock") void devUnlockAll();
   };
   const onChange = (e: Event) => {
     const el = e.target as HTMLInputElement;

@@ -25,17 +25,20 @@ const browserEnv = (): GuardEnv => ({
 });
 
 /** The saved-game keys a tool owns ("Start over" clears these and nothing else). Map and Settings keep none of their own. */
+// in the current game and the active character's slot (games.ts keyFor); the Hulk map, like Map, keeps none of its own
 const KEYS: Record<string, string[]> = {
   dungeon: ["2d6:play:dungeon"],
   sheet: ["2d6:play:character"],
   combat: ["2d6:play:combat"],
   realm: ["2d6:play:realm"],
-  // 2D6 Void's tools keep their state under "2d6v:" (games.ts keyFor); the Hulk map, like Map, keeps none of its own
-  vhulk: [keyFor("2d6:play:vhulk", "void")],
-  vcombat: [keyFor("2d6:play:vcombat", "void")],
-  vsheet: [keyFor("2d6:play:vsheet", "void")],
+  lairs: ["2d6:play:lairs"],
+  haunted: ["2d6:play:haunted"],
+  vhulk: ["2d6:play:vhulk"],
+  vcombat: ["2d6:play:vcombat"],
+  vsheet: ["2d6:play:vsheet"],
 };
-export const toolKeys = (id: string): string[] => KEYS[id] ?? [];
+const VOID_TOOLS = new Set(["vhulk", "vcombat", "vsheet"]);
+export const toolKeys = (id: string): string[] => (KEYS[id] ?? []).map((k) => keyFor(k, VOID_TOOLS.has(id) ? "void" : "dungeon"));
 
 /** `page` with its render wrapped: if it throws, show the recovery card instead of the generic error. */
 export function guardTool(id: string, page: Guarded, env: GuardEnv = browserEnv()): Guarded {

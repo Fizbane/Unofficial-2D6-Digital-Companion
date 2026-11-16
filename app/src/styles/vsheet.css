@@ -2,9 +2,14 @@
    shared sheet layout (grid, hints, conditions, large items) from sheet.css applies. */
 .vsheet-page { --vs-yellow: #e2b42a; --vs-yellow-ink: #1d1600; }
 
-/* rule notes */
-.vs-rule { display: flex; gap: var(--space-1); align-items: flex-start; margin: 0; font: 0.76rem/1.45 var(--font-ui); color: var(--muted); }
-.vs-rule .icon { flex: none; margin-top: 2px; color: var(--accent); }
+/* rule notes: always shown on the creation form (.vs-note), folded away on the sheet (details.vs-rule) */
+.vs-note { display: flex; gap: var(--space-1); align-items: flex-start; margin: 0; font: 0.76rem/1.45 var(--font-ui); color: var(--muted); }
+.vs-note .icon { flex: none; margin-top: 2px; color: var(--accent); }
+.vsheet-page details.vs-rule > summary { display: inline-flex; align-items: center; gap: 4px; list-style: none; font: 600 0.7rem/1.6 var(--font-ui); letter-spacing: .04em; text-transform: uppercase; }
+.vsheet-page details.vs-rule > summary::-webkit-details-marker { display: none; }
+.vs-rule > summary .icon { color: var(--accent); }
+.vs-rule[open] > summary { color: var(--ink); }
+.vs-rule > p { margin: 2px 0 0; padding-left: var(--space-2); border-left: 2px solid var(--frame); font: 0.76rem/1.45 var(--font-ui); color: var(--muted); }
 
 /* creation */
 .vs-choices { display: grid; gap: var(--space-2); }
@@ -42,6 +47,34 @@ span.vs-die { cursor: default; }
 .vs-tag { padding: 0 6px; border: var(--hairline); border-radius: 999px; font: 600 0.68rem/1.6 var(--font-ui); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .vs-add { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
 .vs-add select { flex: 1 1 12rem; min-width: 0; }
+.vs-artefacts { display: grid; gap: var(--space-1); align-content: start; }
+/* things the book describes, as chips: hover one for what it does */
+.vs-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.vs-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid var(--frame); background: var(--surface-solid); font: 500 0.76rem/1.6 var(--font-ui); }
+.vs-chip .icon { color: var(--accent); }
+.vs-chip:focus-visible, .vs-enh-chip:focus-visible, .vs-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* bio enhancements up front, under the stats they change. One that carries a rule glows, and a slow
+   glint crosses it now and then: enough to catch the eye, not enough to pull it off the page. */
+.vs-enh { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.vs-enh-chip {
+  position: relative; overflow: hidden; display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
+  padding: 3px 12px 3px 8px; border: 1px solid var(--frame); background: var(--surface-solid);
+  font: 0.8rem/1.5 var(--font-ui); clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+.vs-enh-chip .icon { align-self: center; flex: none; color: var(--muted); }
+.vs-enh-chip strong { font: 600 0.74rem/1.5 var(--font-display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.vs-enh-rule { color: var(--muted); }
+.vs-enh-chip.is-func { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface-solid)); }
+.vs-enh-chip.is-func .icon { color: var(--accent); filter: drop-shadow(0 0 5px var(--glow)); }
+.vs-enh-chip.is-func .vs-enh-rule { color: var(--ink); }
+.vs-enh-chip.is-func::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-100%);
+  background: linear-gradient(105deg, transparent 38%, color-mix(in srgb, var(--accent) 38%, transparent) 50%, transparent 62%);
+  animation: vs-glint 7s ease-in-out infinite;
+}
+@keyframes vs-glint { 0%, 78% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .vs-enh-chip.is-func::after { display: none; } }
+.vs-bio li.is-func { padding-left: 4px; border-left: 2px solid var(--accent); }
 
 /* ranged weapons */
 .vs-weapon { padding: var(--space-2) 0; border-bottom: var(--hairline); display: grid; gap: var(--space-1); }
@@ -56,8 +89,9 @@ span.vs-die { cursor: default; }
 
 /* skills */
 .vs-special { display: grid; gap: 2px; padding: var(--space-2); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 8%, transparent); font: 0.86rem/1.4 var(--font-ui); }
-.vs-check-row { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
-.vs-check-row input { width: 5.5em; }
+.vs-check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.vs-check-grid .field { min-width: 0; }
+.vs-check-grid :is(select, input) { width: 100%; }
 .vs-ste { display: grid; gap: 2px; }
 .vs-ste-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: 3px 0; border-bottom: var(--hairline); font: 0.88rem var(--font-ui); }
 .vs-ste-row:last-child { border-bottom: 0; }
@@ -93,3 +127,187 @@ span.vs-die { cursor: default; }
 .vs-gallery .portrait-pick[hidden] { display: none; }
 .vs-gallery .portrait-pick img { image-rendering: auto; object-fit: cover; }
 .vs-gallery-empty { margin: 0; font-size: 0.82rem; }
+
+/* ================= the console layout (sheet mode) =================
+   A band (who you are + hit points), a row of stat tiles, then three columns: two of combat cards that
+   are always on screen and a tabbed panel for the rest. Frames have cut corners. Everything is scoped
+   to .vsheet-page, so the Dungeon sheet (which shares sheet.css) is untouched. */
+.vsheet-page {
+  --cut: 14px;
+  --frame: color-mix(in srgb, var(--accent) 42%, var(--line));
+  --vs-gap: var(--space-3);
+}
+
+/* cut-corner frames: the corners are clipped off, and the two diagonal edges are drawn back in as
+   gradient slivers (accent at the top left, frame colour at the bottom right) */
+.vsheet-page :is(.card, .vs-frame) {
+  margin: 0; padding: var(--space-3); min-width: 0;
+  border: 1px solid var(--frame); border-radius: 0;
+  -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
+  background:
+    linear-gradient(135deg, var(--accent) 0 calc(var(--cut) * 0.7071 + 2px), transparent 0) top left / calc(var(--cut) + 8px) calc(var(--cut) + 8px) no-repeat border-box,
+    linear-gradient(315deg, var(--frame) 0 calc(var(--cut) * 0.7071 + 1.5px), transparent 0) bottom right / calc(var(--cut) + 8px) calc(var(--cut) + 8px) no-repeat border-box,
+    var(--surface);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+}
+.vsheet-page .card-accent { border-color: var(--accent); }
+/* the arrange outline sits outside the box, where the clip would hide it */
+.vsheet-page.is-arranging .card { outline-offset: -4px; }
+
+/* card heads: icon + display-type title on the left, the eyebrow as a quiet tag on the right */
+.vsheet-page .card-head {
+  display: flex; flex-direction: row-reverse; align-items: baseline; justify-content: space-between; gap: var(--space-2);
+  margin: 0 0 var(--space-2); padding-bottom: 6px; border-bottom: 1px solid var(--frame);
+}
+.vsheet-page :is(.card-title, .vs-frame-title) {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font: 600 0.86rem/1.2 var(--font-display); letter-spacing: .09em; text-transform: uppercase;
+}
+.vsheet-page :is(.card-title, .vs-frame-title) .icon { width: 16px; height: 16px; flex: none; color: var(--accent); filter: drop-shadow(0 0 5px var(--glow)); }
+.vsheet-page .card-head .eyebrow { margin: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* the page head, slimmer */
+.vsheet-page .play-head { margin: 0 0 var(--vs-gap); padding: var(--space-2) var(--space-3); align-items: center; }
+.vsheet-page .play-title h1 { font-size: 1.5rem; }
+.vs-foot { justify-self: start; margin: 0; padding: 2px var(--space-2); font: 0.74rem/1.5 var(--font-ui); background: var(--surface); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); }
+
+.vs-sheet { display: grid; gap: var(--vs-gap); }
+.vs-sheet .card-body > * + * { margin-top: var(--space-2); }
+.vs-sheet .sheet-hint { font-size: 0.75rem; }
+.vs-sheet .card-body > .sheet-hint:first-child { margin-top: 0; }
+.vs-sheet .step-actions { margin: var(--space-2) 0 0; }
+
+/* ----- the band ----- */
+/* one frame: who you are on the left, hit points on the right, the folds in a row underneath */
+.vs-band { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2) var(--space-5); align-items: center; }
+.vs-band > * + * { margin-top: 0; }
+.vs-band > .vs-hp { display: grid; gap: var(--space-2); padding-left: var(--space-5); border-left: 1px solid var(--frame); }
+.vs-band-more { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--space-5); }
+.vs-band-more > details[open] { flex: 1 1 100%; }
+.vs-hp-top .vs-frame-title { flex: none; }
+.vs-frame > * + * { margin-top: var(--space-2); }
+.vs-id .char-head { align-items: center; gap: var(--space-4); padding: 0; }
+.vs-id .char-head-text { flex: 1; }
+.vs-id .char-name { font-size: 1.9rem; letter-spacing: .02em; text-shadow: 0 0 18px var(--glow); }
+.vs-id .char-level { font-size: 0.82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+.vs-xp-next { font: 500 0.78rem/1.3 var(--font-ui); color: var(--muted); }
+.vs-id-xp { display: flex; align-items: center; gap: var(--space-3); margin-top: 2px; }
+.vs-id-xp .stepper { flex: 0 0 9rem; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-2); }
+.vs-xp-src { margin-top: var(--space-1); }
+.vs-xp-src > summary { font: 500 0.78rem/1.3 var(--font-ui); color: var(--accent); cursor: pointer; }
+.vs-xp-src .vs-xp { margin-top: var(--space-2); }
+.vs-hero-band { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.vs-hero-label { display: inline-flex; align-items: center; gap: 4px; font: 600 0.72rem/1 var(--font-ui); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.vs-hero-band .vs-hero { margin: 0; }
+/* the portrait: large, with the same cut corners (the button is the frame, the picture sits inside it) */
+.vs-id .portrait-btn { padding: 2px; border-radius: 0; background: var(--accent); clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px); }
+.vs-id .portrait-lg { width: 112px; height: 112px; border: 0; border-radius: 0; box-shadow: none; font-size: 3rem; clip-path: polygon(11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%, 0 11px); }
+.vs-id .portrait-btn:hover { background: var(--ink); }
+.vs-id .portrait-btn:focus-visible { background: var(--ink); box-shadow: none; }
+/* the special skill: one line along the bottom of the band, before the folds */
+.vs-band-more .vs-special { order: 0; flex: 1 1 22rem; display: block; border-radius: 0; border-left: 2px solid var(--accent); padding: 2px var(--space-2); font-size: 0.8rem; }
+.vs-band-more .vs-special strong { margin-right: var(--space-2); }
+.vs-band-more > details { order: 1; }
+.vs-edit > * + * { margin-top: var(--space-2); }
+
+.vs-hp-top { display: flex; align-items: center; gap: var(--space-3); }
+.vs-hp-top .hp-bar { flex: 1; }
+.vs-hp-read { display: flex; align-items: baseline; gap: var(--space-2); font-family: var(--font-display); font-variant-numeric: lining-nums tabular-nums; }
+.vs-hp-read strong { font-size: 2.6rem; line-height: 1; text-shadow: 0 0 18px var(--glow); }
+.vs-hp-read span { font-size: 1.1rem; color: var(--muted); }
+/* a segmented bar: the gaps are painted over the fill */
+.vs-hp .hp-bar { position: relative; height: 14px; margin: 0; border-radius: 0; border-color: var(--frame); }
+.vs-hp .hp-bar > div { background: var(--danger); }
+.vs-hp .hp-bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 10px, var(--surface-solid) 10px 12px); pointer-events: none; }
+.vs-hp-ctl { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.vs-hp-ctl .stepper { flex: 0 0 8.5rem; }
+
+/* ----- stat tiles ----- */
+.vs-stats { display: grid; gap: var(--space-1); }
+.vs-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-2); margin: 0; filter: drop-shadow(0 1px 0 var(--frame)) drop-shadow(0 0 8px var(--glow)); }
+.vs-tile {
+  display: grid; justify-items: center; align-content: start; gap: 1px; min-width: 0; min-height: 4.6rem;
+  padding: 5px 4px 17px; text-align: center;
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface-solid)); border-top: 2px solid var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), 50% 100%, 0 calc(100% - 14px));
+}
+.vs-tile dt { font: 600 0.66rem/1.3 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
+.vs-tile dd { margin: 0; font: 700 1.5rem/1.1 var(--font-display); font-variant-numeric: lining-nums; color: var(--ink); }
+.vs-tile dd.vs-tile-sub { font: 500 0.7rem/1.2 var(--font-ui); color: var(--accent); }
+.vs-stats-more { padding: 0 var(--space-2); }
+.vs-stats-more[open] { padding: var(--space-2); background: var(--surface); border: 1px solid var(--frame); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); }
+.vs-stats-more > summary { text-shadow: 0 1px 2px var(--bg); }
+
+/* ----- the three columns ----- */
+/* combat, survival, tech; the tabbed panel runs under all three */
+.vs-console { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--vs-gap); align-items: start; }
+.vs-col, .vs-tabbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--vs-gap); align-content: start; min-width: 0; }
+.vs-panel { grid-column: 1 / -1; display: grid; gap: var(--space-2); min-width: 0; container: vspanel / inline-size; }
+.vs-tab-story.vs-tabbody { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+/* Bloodied and Stunned under the hit points, in the band */
+.vs-conds { display: grid; gap: 2px; padding-top: var(--space-2); border-top: 1px solid var(--frame); }
+.vs-sheet .vs-conds .condition { padding-top: 2px; border-top: 0; }
+.vs-sheet .vs-conds .condition-head { flex-direction: row; align-items: center; gap: 4px; font-size: 0.85rem; }
+.vs-sheet .vs-conds .cond-boxes { gap: 3px; flex-wrap: wrap; }
+.vs-sheet .vs-conds .cond-boxes .btn { min-height: 0; padding: 2px 6px; font-size: 0.74rem; white-space: nowrap; flex: none; }
+.vs-room { display: flex; justify-content: flex-end; }
+/* a single column has no half and full widths to choose between */
+.vs-col .arr-span { display: none; }
+
+/* the panel's tabs: a strip of cut-corner keys */
+.vs-panel .tabs-bar { gap: 4px; border-bottom: 2px solid var(--accent); padding: 0; }
+.vs-panel .tab {
+  flex: 1 1 0; min-width: 0; justify-content: center; margin: 0; padding: 7px 4px; border: 0;
+  font: 600 0.7rem/1.2 var(--font-display); letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); background: var(--surface-solid);
+  clip-path: polygon(9px 0, 100% 0, 100% 100%, 0 100%, 0 9px);
+}
+.vs-panel .tab .icon { width: 14px; height: 14px; flex: none; }
+@container vspanel (max-width: 519px) { .vs-panel .tab .icon { display: none; } }
+/* a wide panel (it sits under the columns on a mid-width page) shows its cards two abreast */
+@container vspanel (min-width: 640px) {
+  .vs-tabbody { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vs-tabbody > .card:only-child { grid-column: 1 / -1; }
+}
+.vs-panel .tab:hover { color: var(--ink); }
+.vs-panel .tab[aria-selected="true"] { color: var(--accent-ink); background: var(--accent); text-shadow: none; }
+.vs-panel .tab:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); border-radius: 0; }
+
+/* ----- denser controls on the sheet ----- */
+.vs-sheet .grid { grid-template-columns: repeat(auto-fill, minmax(8.2rem, 1fr)); gap: var(--space-2); }
+.vs-sheet :is(.field input, .field select, .field textarea, .stepper input, .rows input, .vs-add select, .vs-check-grid select, .vs-check-grid input, .vs-list input, .vs-stim select) { padding: 4px 6px; font-size: 0.86rem; border-radius: 0; }
+.vs-sheet .stepper-ctl button { width: 28px; }
+.vs-sheet .stepper-ctl button:first-child, .vs-sheet .stepper-ctl button:last-child { border-radius: 0; }
+.vs-sheet .field textarea { min-height: 96px; font-size: 0.95rem; }
+.vs-sheet .boxes input { width: 18px; height: 18px; }
+.vs-sheet .condition { padding-top: var(--space-2); }
+.vs-sheet .condition:first-child { padding-top: 0; border-top: 0; }
+/* a condition is one line: its name, its boxes, its buttons; the wording is in the Rule fold */
+.vs-sheet .condition { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); align-items: center; gap: 2px var(--space-2); }
+.vs-sheet .condition-head { margin: 0; flex-direction: column; align-items: flex-start; }
+.vs-sheet .condition > .vs-rule { grid-column: 2; }
+.vs-sheet .cond-boxes { gap: 3px; flex-wrap: nowrap; }
+.vs-sheet .cond-boxes input { width: 16px; height: 16px; }
+.vs-sheet .cond-boxes .btn { margin-left: 2px; min-height: 0; padding: 2px 6px; font-size: 0.74rem; white-space: nowrap; }
+.vs-sheet .condition-head .muted { font-size: 0.72rem; }
+.vs-sheet .vs-trow { font-size: 0.86rem; }
+.vs-sheet .vs-weapon-ammo .stepper { flex: 1 1 5rem; min-width: 0; }
+.vs-sheet .vs-marks { padding-top: var(--space-2); }
+.vs-sheet .vs-gas { grid-template-columns: repeat(auto-fill, minmax(8.2rem, 1fr)); }
+.vs-sheet .large-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vs-sheet .notes-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-2); }
+
+/* ----- narrower: two columns with the panel underneath, then one column (tablets and phones) ----- */
+@container (max-width: 1099px) {
+  .vs-console { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vs-panel { grid-column: 1 / -1; }
+}
+@container (max-width: 639px) {
+  .vs-band, .vs-console { grid-template-columns: minmax(0, 1fr); }
+  .vs-id .char-head { flex-wrap: wrap; gap: var(--space-3); }
+  .vs-id .portrait-lg { width: 84px; height: 84px; }
+  .vs-id .char-name { font-size: 1.5rem; }
+  .vs-band > .vs-hp { padding: var(--space-2) 0 0; border-left: 0; border-top: 1px solid var(--frame); }
+  .vs-panel .tab { padding: 9px var(--space-1); }
+}
+@container (max-width: 519px) { .vs-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

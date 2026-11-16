@@ -71,7 +71,14 @@ export async function remapLegacy(key: Uint8Array, edition: string, manifest: Ma
     if (changed) writeJson("2d6:fixes", fixes);
   }
 
-  const journal = readJson("2d6:journal") as { entries?: unknown } | undefined;
+  // every Dungeon character's journal (rostermodel.ts slots), and one from before rosters
+  for (const jk of Object.keys(localStorage).filter((k) => /^2d6:(c:c-[a-z0-9]{4,12}:)?journal$/.test(k))) count += remapJournal(jk, to);
+  return count;
+}
+
+function remapJournal(jk: string, to: (id: string) => string | undefined): number {
+  let count = 0;
+  const journal = readJson(jk) as { entries?: unknown } | undefined;
   if (journal && typeof journal === "object" && Array.isArray(journal.entries)) {
     let changed = false;
     const relink = (s: string) => s.replace(SECTION_LINK, (m, enc: string) => {
@@ -87,7 +94,7 @@ export async function remapLegacy(key: Uint8Array, edition: string, manifest: Ma
       if (!e || typeof e !== "object") continue;
       for (const f of ["text", "addition"]) if (typeof e[f] === "string") e[f] = relink(e[f] as string);
     }
-    if (changed) writeJson("2d6:journal", journal);
+    if (changed) writeJson(jk, journal);
   }
   return count;
 }

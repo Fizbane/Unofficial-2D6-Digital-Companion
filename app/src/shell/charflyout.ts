@@ -8,11 +8,17 @@ import { NARROW_MQ } from "./layout";
 import { charCard, wireCharCard } from "./panels/charcard";
 import { html, setHTML, type Raw } from "../ui/html";
 import { wireVoidCharCard } from "./vcharbar";
+import { icon } from "../ui/icon";
+import { isVoid } from "../games";
 
 type SheetModule = typeof import("../tools/sheet");
 
 const OPEN_DELAY = 120;
 const CLOSE_DELAY = 200;
+
+/** Under the card: the way to the other characters (pages/characters.ts). */
+const switchLink = (): Raw =>
+  html`<a class="btn btn-ghost btn-sm char-switch" href="#/play/characters">${icon("user", { size: 15 })}<span>${isVoid() ? "Switch survivor" : "Switch character"}</span></a>`;
 
 export interface CharFlyout {
   isOpen(): boolean;
@@ -29,6 +35,8 @@ export function initCharFlyout(
     sheet(): SheetModule | null; openSheet(): void; closeOthers(): void; busy(): boolean;
     /** 2D6 Void: the survivor's card (null while there is none). Replaces the Dungeon sheet card. */
     voidCard?: () => Raw | null;
+    /** Where the name chip is (the player group, on either bar); default `bar`. Hover is watched there. */
+    chipRoot?: HTMLElement;
   },
 ): CharFlyout {
   const fly = document.createElement("div");
@@ -38,7 +46,8 @@ export function initCharFlyout(
   fly.hidden = true;
   bar.append(fly);
   const narrow = window.matchMedia(NARROW_MQ);
-  const chip = () => bar.querySelector<HTMLElement>("[data-name-chip]");
+  const root = o.chipRoot ?? bar;
+  const chip = () => root.querySelector<HTMLElement>("[data-name-chip]");
   let timer = 0;
   let pinned = false; // opened (or kept) by a click: the pointer leaving doesn't close it
   const later = (fn: () => void, ms: number) => {
@@ -50,18 +59,18 @@ export function initCharFlyout(
     if (fly.hidden) return;
     if (o.voidCard) {
       const card = o.voidCard();
-      if (card) setHTML(fly, card);
+      if (card) setHTML(fly, html`${card}${switchLink()}`);
       return;
     }
     const sheet = o.sheet();
     if (!sheet) return;
     const c = sheet.loadChar();
     const focused = fly.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.hp : undefined;
-    setHTML(fly, charCard(
+    setHTML(fly, html`${charCard(
       c,
       sheet.stats(c),
       fatigueText(load<{ phase?: string; fatigue?: number } | null>("combat", null)),
-    ));
+    )}${switchLink()}`);
     if (focused) fly.querySelector<HTMLElement>(`[data-hp="${focused}"]`)?.focus();
   }
 
@@ -110,28 +119,36 @@ export function initCharFlyout(
 
   // hover (mouse and pen hover only; touch "enter" comes with a tap, handled as a toggle)
   const isHover = (e: PointerEvent) => e.pointerType === "mouse";
-  bar.addEventListener("pointerover", (e) => {
-    if (!isHover(e)) return;
-    const t = e.target as HTMLElement;
-    if (t.closest("[data-name-chip]")) {
-      if (!fly.hidden) clearTimeout(timer);
-      else if (!o.busy()) later(() => !o.busy() && open(false), OPEN_DELAY);
-    }
-    else if (fly.contains(t)) clearTimeout(timer);
-  });
-  bar.addEventListener("pointerout", (e) => {
-    if (!isHover(e)) return;
-    const to = e.relatedTarget as HTMLElement | null;
-    if (to && (fly.contains(to) || to.closest?.("[data-name-chip]"))) return;
-    if (fly.hidden) return clearTimeout(timer); // left before the open delay
-    // leaving the chip or the flyout: close unless the keyboard is inside it
-    if (!pinned && !fly.contains(document.activeElement)) later(() => close(), CLOSE_DELAY);
-  });
+  const watch = (el: HTMLElement) => {
+    el.addEventListener("pointerover", (e) => {
+      if (!isHover(e)) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("[data-name-chip]")) {
+        if (!fly.hidden) clearTimeout(timer);
+        else if (!o.busy()) later(() => !o.busy() && open(false), OPEN_DELAY);
+      }
+      else if (fly.contains(t)) clearTimeout(timer);
+    });
+    el.addEventListener("pointerout", (e) => {
+      if (!isHover(e)) return;
+      const to = e.relatedTarget as HTMLElement | null;
+      if (to && (fly.contains(to) || to.closest?.("[data-name-chip]"))) return;
+      if (fly.hidden) return clearTimeout(timer); // left before the open delay
+      // leaving the chip or the flyout: close unless the keyboard is inside it
+      if (!pinned && !fly.contains(document.activeElement)) later(() => close(), CLOSE_DELAY);
+    });
+  };
+  // the name chip's group, and the flyout itself (it hangs off `bar`, which may be another bar than the chip's)
+  watch(root);
+  if (!root.contains(fly)) watch(fly);
 
   const openSheet = () => {
     close();
     o.openSheet();
   };
+  fly.addEventListener("click", (e) => {
+    if ((e.target as Element).closest(".char-switch")) close();
+  });
   if (o.voidCard) wireVoidCharCard(fly, openSheet);
   else wireCharCard(fly, { source: "strip", sheet: o.sheet, openSheet });
   narrow.addEventListener("change", () => narrow.matches && close());

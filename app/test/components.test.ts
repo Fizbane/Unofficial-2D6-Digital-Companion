@@ -53,17 +53,17 @@ describe("ui components", () => {
 
 describe("splitResultTitle (render-time split of long result titles)", () => {
   it("splits a caps label off before a dash", () => {
-    const r = splitResultTitle("ARCHAEOLOGY – Over the year several stones have been found in one location. They come together.");
-    expect(r).toEqual({ title: "ARCHAEOLOGY", rest: "Over the year several stones have been found in one location. They come together.", long: false });
+    const r = splitResultTitle("ARCHAEOLOGY – Over the season a farmer keeps digging up odd green coins in one field. Nobody claims them.");
+    expect(r).toEqual({ title: "ARCHAEOLOGY", rest: "Over the season a farmer keeps digging up odd green coins in one field. Nobody claims them.", long: false });
   });
   it("splits a caps label before a spaced hyphen", () => {
-    const r = splitResultTitle("WANDERING MASON - A mason has wandered into your realm and is looking for work.");
-    expect(r.title).toBe("WANDERING MASON");
-    expect(r.rest).toBe("A mason has wandered into your realm and is looking for work.");
+    const r = splitResultTitle("ROVING TINKER - A tinker with a squeaky cart turns up at the gate wanting odd jobs.");
+    expect(r.title).toBe("ROVING TINKER");
+    expect(r.rest).toBe("A tinker with a squeaky cart turns up at the gate wanting odd jobs.");
     expect(r.long).toBe(false);
   });
   it("flags a long sentence with no label as long and keeps it whole", () => {
-    const t = "She holds up the scroll, examines it quickly, rolls it up and ties the leather cord. She shows no emotion.";
+    const t = "The clerk squints at the letter, turns it over twice, then folds it into a tiny square. He says nothing at all.";
     expect(splitResultTitle(t)).toEqual({ title: t, long: true });
   });
   it("leaves a short title untouched", () => {
@@ -72,9 +72,9 @@ describe("splitResultTitle (render-time split of long result titles)", () => {
   });
   it("resultCard renders the split label, the rest as text, and is-long", () => {
     const base = { id: "r1", at: 0, eyebrow: "E", text: "", dice: "", follow: [] } as unknown as ResultCard;
-    const a = String(resultCard({ ...base, title: "WANDERING MASON - A mason has wandered into your realm and is looking for work." }, (s) => html`${s}`));
-    expect(a).toContain('<div class="rc-title">WANDERING MASON</div><div class="rc-text">A mason has wandered');
-    const b = String(resultCard({ ...base, title: "She holds up the scroll, examines it quickly, rolls it up and ties the leather cord." }, (s) => html`${s}`));
+    const a = String(resultCard({ ...base, title: "ROVING TINKER - A tinker with a squeaky cart turns up at the gate wanting odd jobs." }, (s) => html`${s}`));
+    expect(a).toContain('<div class="rc-title">ROVING TINKER</div><div class="rc-text">A tinker with a squeaky');
+    const b = String(resultCard({ ...base, title: "The clerk squints at the letter, turns it over twice, then folds it into a tiny square." }, (s) => html`${s}`));
     expect(b).toContain('class="rc-title is-long"');
   });
 });

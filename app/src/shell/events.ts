@@ -68,6 +68,8 @@ export interface Events {
   "realm:building": { type: string }; // a building was started
   "achievement:unlocked": { id: string; title: string; icon: IconName };
   "achievements:changed": { source: string }; // "2d6:achievements" was written
+  "statistics:changed": { source: string }; // this game's statistics store was written
+  "combat:saved": { by: string }; // a companion took the killing blow and you live (by: its name)
 }
 
 export class EventBus<E> {

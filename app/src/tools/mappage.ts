@@ -3,16 +3,16 @@
 // shows the plots, and tapping one shows its details.
 import type { ToolContext } from "../main";
 import { mountDungeonMap } from "./mapview";
-import { load } from "./common";
+import { load, playKey } from "./common";
 import { plotCardHtml, plotsForMap, type Bldg, type Land } from "./realm";
 import { mapLegendHtml, renderRealmMap } from "./rmap";
-import { button, eyebrow, tabsBar } from "../ui/components";
+import { button, tabsBar } from "../ui/components";
 import { icon } from "../ui/icon";
 import { bus } from "../shell/events";
 import { html, type Raw, setHTML } from "../ui/html";
 
 type View = "dungeon" | "realm";
-const REALM_KEY = "2d6:play:realm";
+const REALM_KEY = playKey("realm");
 
 let view: View = "dungeon"; // kept while the app is open, so a reopened Map tab shows the same view
 
@@ -20,7 +20,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
   root.classList.add("play-page", "page-wide", "map-page");
   setHTML(root, html`
     <header class="play-head">
-      <div class="play-title">${eyebrow("Play")}<h1>${icon("map", { size: 26 })}<span>Map</span></h1></div>
+      <div class="play-title"><h1>${icon("map", { size: 26 })}<span>Map</span></h1></div>
       <div class="play-actions">${tabsBar([{ id: "dungeon", label: "Dungeon", icon: "key" }, { id: "realm", label: "Realm", icon: "castle" }], view, html`aria-label="Map view"`)}</div>
     </header>
     <section class="card map-card"><div class="map-body"></div></section>`);

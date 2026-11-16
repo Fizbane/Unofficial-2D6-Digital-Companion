@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Badges, isPanelId, PANEL_IDS, panelTab, rootId } from "../src/shell/panelmodel";
+import { Badges, combatLogShown, isPanelId, PANEL_IDS, panelTab, rootId, stepPanel } from "../src/shell/panelmodel";
 import type { ResultCard } from "../src/shell/types";
 
 const card = (id: string, parent?: string): ResultCard => ({
@@ -17,8 +17,9 @@ describe("panelTab", () => {
     expect(panelTab({ panelTab: "character" })).toBe("results");
     expect(isPanelId("Results")).toBe(false);
   });
-  it("has Results, Notes and Journal; a layout saved on the removed Map tab opens Results", () => {
-    expect(PANEL_IDS).toEqual(["results", "notes", "journal"]);
+  it("has Results, Notes, Journal and the Combat log; a layout saved on the removed Map tab opens Results", () => {
+    expect(PANEL_IDS).toEqual(["results", "notes", "journal", "combat"]);
+    expect(panelTab({ panelTab: "combat" })).toBe("combat");
     expect(isPanelId("map")).toBe(false);
     expect(panelTab({ panelTab: "map" })).toBe("results");
   });
@@ -57,5 +58,46 @@ describe("Badges", () => {
     expect(b.any()).toBe(true);
     b.seen("notes");
     expect(b.any()).toBe(false);
+  });
+});
+
+describe("combatLogShown", () => {
+  const none = { dungeon: null, lairs: null, haunted: null, vhulk: null, fighting: false };
+  it("is hidden when you aren't anywhere a fight happens", () => {
+    expect(combatLogShown("dungeon", none)).toBe(false);
+    expect(combatLogShown("void", none)).toBe(false);
+    expect(combatLogShown("dungeon", { ...none, dungeon: { rooms: [], current: null }, lairs: { lair: "" }, haunted: { fear: 0, rooms: [0, 0], loftCleared: false } })).toBe(false);
+  });
+  it("shows in a dungeon level that has begun", () => {
+    expect(combatLogShown("dungeon", { ...none, dungeon: { rooms: [{}], current: null } })).toBe(true);
+    expect(combatLogShown("dungeon", { ...none, dungeon: { rooms: [], current: { n: 1 } } })).toBe(true);
+  });
+  it("shows in a lair or the haunted house", () => {
+    expect(combatLogShown("dungeon", { ...none, lairs: { lair: "swamp" } })).toBe(true);
+    expect(combatLogShown("dungeon", { ...none, haunted: { fear: 0, rooms: [1, 0], loftCleared: false } })).toBe(true);
+    expect(combatLogShown("dungeon", { ...none, haunted: { fear: 2, rooms: [0, 0], loftCleared: false } })).toBe(true);
+  });
+  it("shows aboard the Dark Hulk once a level is entered, in Void only", () => {
+    expect(combatLogShown("void", { ...none, vhulk: { map: {} } })).toBe(true);
+    expect(combatLogShown("void", { ...none, vhulk: {} })).toBe(false);
+    expect(combatLogShown("void", { ...none, dungeon: { rooms: [{}], current: null } })).toBe(false);
+    expect(combatLogShown("dungeon", { ...none, vhulk: { map: {} } })).toBe(false);
+  });
+  it("shows while a fight is under way wherever you are, so its log is never out of reach", () => {
+    expect(combatLogShown("dungeon", { ...none, fighting: true })).toBe(true);
+  });
+  it("reads broken saved state as not there", () => {
+    expect(combatLogShown("dungeon", { ...none, dungeon: { rooms: "x" }, lairs: 5, haunted: { rooms: "y" } })).toBe(false);
+  });
+});
+
+describe("stepPanel", () => {
+  const ids = ["results", "notes", "journal", "combat"] as const;
+  it("moves to the next or previous tab that is showing, wrapping round", () => {
+    expect(stepPanel(ids, "journal", 1, new Set())).toBe("combat");
+    expect(stepPanel(ids, "journal", 1, new Set(["combat"]))).toBe("results");
+    expect(stepPanel(ids, "results", -1, new Set(["combat"]))).toBe("journal");
+    expect(stepPanel(ids, "notes", "first", new Set())).toBe("results");
+    expect(stepPanel(ids, "notes", "last", new Set(["combat"]))).toBe("journal");
   });
 });

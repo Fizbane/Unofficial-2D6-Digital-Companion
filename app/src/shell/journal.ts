@@ -9,8 +9,9 @@ import {
   capJournal, deleteEntry, editEntryText, emptyJournal, isJournalState, JOURNAL_KEY, levelUpCheck, normalizeJournal, recordDoor, recordFight, recordLevelUp, recordMilestone,
   recordRealm, recordRoom, recordAchievement, roomKey, setAddition, setStairs, type At, type JournalState,
 } from "./journalmodel";
-import { plainText } from "./journalprose";
-import { hasSaved, load } from "../tools/common";
+import { entryStory } from "./journalprose";
+import { hasSaved, levelTool, load } from "../tools/common";
+import { isVoid } from "../games";
 import type { DungeonMap } from "../tools/dmap";
 
 const SOURCE = "journal";
@@ -41,13 +42,17 @@ function when(): At {
 }
 
 interface SavedDungeon { level: number; current: { n: number; mapRoom?: number } | null; map?: DungeonMap }
-const loadDungeon = () => load<SavedDungeon>("dungeon", { level: 1, current: null, map: undefined });
+// the level being played: the Dungeon turn's save, or 2D6 Void's Start Game (same fields)
+const loadDungeon = () => load<SavedDungeon>(levelTool(), { level: 1, current: null, map: undefined });
 
 /** The saved journal, with any malformed chapter or entry (a hand-edited backup) dropped. */
 const loadJournal = () => normalizeJournal(readState(JOURNAL_KEY, isJournalState, emptyJournal));
 
 /** Edit / add to / delete an entry from the panel. */
 export function journalEdit(id: string, text: string) {
+  // saved unchanged, it is still the written story: keep it growing with the room, don't freeze it as an edit
+  const e = state.entries.find((x) => x.id === id);
+  if (e && !e.edited && text.trim() === entryStory(e).generated.trim()) text = "";
   editEntryText(state, id, text);
   commit(false);
 }
@@ -107,16 +112,31 @@ export function initJournal(onNewEntry: () => void): void {
   });
 
   // level-ups: a one-level rise saved by play (not an import or a new character; see levelUpCheck)
-  void import("../tools/sheet").then(({ loadChar, stats }) => {
-    const seen = { seen: stats(loadChar()).level };
-    bus.on("character:changed", ({ source }) => {
-      const st = stats(loadChar());
-      if (levelUpCheck(seen, st.level, source)) {
-        recordLevelUp(state, st.level, st.title, when());
-        commit(true);
-      }
+  if (isVoid()) {
+    // 2D6 Void's sheet, combat and Start Game save the survivor with "void:changed"
+    void import("../tools/void/sheetmodel").then(({ hasVChar, loadVChar, vstats }) => {
+      const now = () => (hasVChar() ? vstats(loadVChar()) : { level: 1, title: "" });
+      const seen = { seen: now().level };
+      bus.on("void:changed", ({ source }) => {
+        const st = now();
+        if (levelUpCheck(seen, st.level, source)) {
+          recordLevelUp(state, st.level, st.title, when());
+          commit(true);
+        }
+      });
     });
-  });
+  } else {
+    void import("../tools/sheet").then(({ loadChar, stats }) => {
+      const seen = { seen: stats(loadChar()).level };
+      bus.on("character:changed", ({ source }) => {
+        const st = stats(loadChar());
+        if (levelUpCheck(seen, st.level, source)) {
+          recordLevelUp(state, st.level, st.title, when());
+          commit(true);
+        }
+      });
+    });
+  }
 
   // achievements (shell/achievements.ts) unlocked by play
   bus.on("achievement:unlocked", ({ id, title }) => {

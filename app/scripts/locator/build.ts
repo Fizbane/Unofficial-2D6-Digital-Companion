@@ -3,7 +3,7 @@
 // on the page, then simulates the browser importer with the same adapters (pdf.js, Tesseract, textInBox,
 // countPips, verifyCell) for every edition, and stores keyed hashes and small patches.
 //
-//   npx tsx scripts/locator/build.ts [--book codex|realm] [--edition id] [--pages 40-60] [--workers 4] [--dump]
+//   npx tsx scripts/locator/build.ts [--book codex|realm|companions|lairs|legendary] [--edition id] [--pages 40-60] [--workers 4] [--dump]
 //
 // A partial run (--book/--edition/--pages) prints coverage but writes neither the manifest nor coverage.json.
 // --dump writes every field's outcome (with the true text and OCR output of those not verified raw) to
@@ -22,13 +22,13 @@ import { openPdf, crop, type PdfDoc, type RGBAImage } from "../../src/lock/pdf";
 import { createOcr, CROP_PAD, RENDER_SCALE, type Ocr } from "../../src/lock/ocr";
 import { toGray } from "../../src/lock/pips";
 import { verifyCell, type CellSource } from "../../src/lock/verify";
-import { guessCell, guessDicePrefixed, guessLabelled } from "../../src/lock/closedset";
+import { guessCell, guessDicePrefixed, guessInterrupt, guessJoined, guessLabelled, guessSlice } from "../../src/lock/closedset";
 import { RE } from "../../src/lock/validate";
 import { MIN_SIMILARITY, align, alignDetail, alignGrid, similarity, unionBox, type Word } from "./align";
 import { detectCells, orderCells } from "./grid";
 import { GATE, gateFigure, honestPatch, rowCoverage, tableClass, type RowCov, type TableClass } from "./rules";
 import { cellSource, ocrCrop } from "../../src/lock/cellsource";
-import { EDITIONS as DUNGEON_EDITIONS, VOID_EDITIONS, FREE_FP, type EditionFile } from "./editions";
+import { BOOK_NAME, EDITIONS as DUNGEON_EDITIONS, VOID_EDITIONS, FREE_FP, type EditionFile } from "./editions";
 
 // ---------------------------------------------------------------------------------------------- paths, args
 
@@ -72,10 +72,19 @@ interface SkSection { id: string; oldId: string; book: string; title: string; le
 
 const skeletonBytes = readFileSync(WORK + `skeleton${SUF}.json`);
 const SKELETON_SHA256 = createHash("sha256").update(skeletonBytes).digest("hex");
-const skeletonJson = JSON.parse(skeletonBytes.toString("utf8")) as { sections: SkSection[]; rotatePages?: Record<string, number> };
+const skeletonJson = JSON.parse(skeletonBytes.toString("utf8")) as
+  { sections: SkSection[]; rotatePages?: Record<string, Record<string, number>> | Record<string, number> };
 const skeleton: SkSection[] = skeletonJson.sections;
-/** Pages the reference edition is shown turned (Void's sideways scans), from the build. */
-const REF_ROTATE_PAGES: number[] = Object.keys(skeletonJson.rotatePages ?? {}).map(Number);
+/**
+ * Pages a book's reference edition is shown turned (sideways table scans), from the build: {book: {page: deg}}.
+ * An older skeleton has one flat {page: deg} map for its single book (2D6 Void).
+ */
+function refRotatePages(book: string): number[] {
+  const r = skeletonJson.rotatePages ?? {};
+  const flat = Object.values(r).every((v) => typeof v === "number");
+  const pages = flat ? (GAME === "void" ? r : {}) : (r as Record<string, Record<string, number>>)[book] ?? {};
+  return Object.keys(pages).map(Number);
+}
 const idMap: Record<string, string> = JSON.parse(readFileSync(WORK + `id-map${SUF}.json`, "utf8"));
 const oldOf = new Map(Object.entries(idMap).map(([old, id]) => [id, old]));
 for (const s of skeleton) {
@@ -407,21 +416,48 @@ function unfold<R extends Region & { text: string }>(cells: R[], cols: string[])
  * measured on the printed cards (see pipeline notes); a row with no template stays null.
  */
 const CARD_X0 = -0.0145;                                            // the card's left edge, from the NAME box's left
+const CARD_HP_CY = 0.0335;                                          // the HP row's centre below the NAME box's top
+const CARD_LEFT_OX = 0.0765, CARD_RIGHT_OX = 0.519;                  // the NAME box's left on the left and right cards
 const CARD_X1 = 0.42;                                               // and its right edge
-export function cardTemplate(rows: string[][], name: Box): (Box | null)[] {
+export function cardTemplate(rows: string[][], name: Box, only?: Set<string>): (Box | null)[] {
   const [ox, oy] = [name[0], name[1]];
   const box = (x0: number, y0: number, x1: number, y1: number): Box => [ox + x0, oy + y0, ox + x1, oy + y1];
   const slot = (k: number): [number, number] => [0.177 + k * 0.0215, 0.196 + k * 0.0215];
+  const L = CARD_X0;                                                // the card's left edge, relative to ox
   let k = 0;                                                        // the next free manoeuvre line
+  const weapon = rows.some((r) => /^AMMO TYPE/i.test(r[0] ?? ""));
   return rows.map((r) => {
     const label = (r[0] ?? "").trim().toUpperCase();
+    const want = (kind: string) => !only || only.has(kind);
+    // A weapon card has its own fixed grid: label and value share a ruled row, the special text a narrow column.
+    if (weapon) {
+      if (label === "TYPE") return box(L + 0.087, 0.0025, L + 0.266, 0.0145);
+      if (label === "SIZE") return box(L + 0.346, 0.0025, L + 0.411, 0.0145);
+      if (label === "ROUND DAMAGE") return box(L + 0.179, 0.0245, L + 0.266, 0.0375);
+      if (label === "CAPACITY") return box(L + 0.378, 0.0245, L + 0.411, 0.0375);
+      if (label === "AMMO TYPE") return box(L + 0.138, 0.0485, L + 0.411, 0.0615);
+      if (label === "SETTINGS") return box(L + 0.118, 0.0715, L + 0.411, 0.0845);
+      if (label === "SPECIAL") return box(L + 0.012, 0.1185, L + 0.147, 0.2035);
+    }
     if (label === "RANGED WEAPON") return box(CARD_X0, 0.244, CARD_X1, 0.273);
     if (label === "MANOEUVRES") {
-      const lines = /special/i.test(r[1] ?? "") || (r[1] ?? "").length > 36 ? 2 : 1;
-      const b = box(0.045, slot(k)[0], CARD_X1, slot(k + lines - 1)[1]);
+      const body = (r[1] ?? "").replace(/^\[\d\]\[\d\] - /, "");
+      const lines = body.length > 78 ? 3 : /special/i.test(body) || body.length > 36 ? 2 : 1;
+      // A second line starts at the card's edge, under the first line's dice picture.
+      const b = box(lines >= 2 ? L + 0.014 : 0.045, slot(k)[0], lines >= 2 ? L + 0.408 : CARD_X1, slot(k + lines - 1)[1]);
       k += lines;
       return b;
     }
+    // The other fixed rows. The interrupt block is three ruled lines holding every interrupt (one may start
+    // on the line the previous one ends on), so each interrupt's box is the whole block; the mishap and
+    // prime texts are the two halves of the card's foot.
+    if (label === "NAME" && want("NAME")) return box(L + 0.092, -0.004, L + 0.35, 0.0155);
+    if (label === "CACHE" && want("CACHE")) {
+      return (r[1] ?? "").length > 16 ? box(L + 0.012, 0.047, L + 0.2575, 0.086) : box(L + 0.1, 0.046, L + 0.2575, 0.064);
+    }
+    if (label === "INTERRUPT" && want("INTERRUPT")) return box(L + 0.0125, 0.09, L + 0.4155, 0.1495);
+    if (/MISHAP/.test(label) && want("MISHAP")) return box(L + 0.0125, 0.366, L + 0.2115, 0.408);
+    if (/PRIME/.test(label) && want("PRIME")) return box(L + 0.2225, 0.366, L + 0.4155, 0.408);
     return null;
   });
 }
@@ -480,7 +516,18 @@ async function locateTable(
     // Every card is printed from one template, so the lines that word alignment can't find (OCR drops lines
     // of the card, or merges them) sit at fixed offsets from the card's NAME line: the whole ranged weapon row
     // (the importer strips the field name) and one line per manoeuvre.
-    const tpl = titleBox ? cardTemplate(t.rows, titleBox) : null;
+    let anchor: Box | null = titleBox;
+    if (!anchor) {                                                  // title unlocated: take the card's place from its HP / XP / SH words
+      const ys = t.rows.map((r, i) => ({ l: (r[0] ?? "").trim().toUpperCase(), b: boxes[i][1] }))
+        .filter((x): x is { l: string; b: Box } => ["HP", "XP", "SH"].includes(x.l) && !!x.b && x.b[3] > 0);
+      if (ys.length) {
+        const cy = ys.map((x) => cyOf(x.b)).sort((a, b) => a - b)[Math.floor(ys.length / 2)];
+        const cx = cxOf(ys[0].b);
+        const oy = cy - CARD_HP_CY;
+        anchor = [cx < 0.5 ? CARD_LEFT_OX : CARD_RIGHT_OX, oy, 0, oy];
+      }
+    }
+    const tpl = anchor ? cardTemplate(t.rows, anchor) : null;
     t.rows.forEach((row, r) => row.forEach((_, c) => {
       const tg = find((x) => x.kind === "cell" && x.row === r && x.col === c);
       if (tg) set(tg, (c === 1 && tpl?.[r]) || boxes[r][c], "align");
@@ -586,7 +633,7 @@ async function simulate(
   if (!tg.truth) return { tg, status: "empty", raw: "" };
   const expected = hashOf(tg.truth);
   slot.v[tg.slot.i] = expected;
-  const guessed = (raw: string): Outcome | null => (tg.guess && (guessCell(expected, hashOf) !== undefined || (raw !== "" && (guessDicePrefixed(expected, raw, hashOf) !== undefined || guessLabelled(expected, raw, hashOf) !== undefined))) ? { tg, status: "guess", raw } : null);
+  const guessed = (raw: string): Outcome | null => (tg.guess && (guessCell(expected, hashOf) !== undefined || (raw !== "" && (guessDicePrefixed(expected, raw, hashOf) !== undefined || guessLabelled(expected, raw, hashOf) !== undefined || guessSlice(expected, raw, hashOf) !== undefined || guessInterrupt(expected, raw, hashOf) !== undefined || guessJoined(expected, raw, hashOf) !== undefined))) ? { tg, status: "guess", raw } : null);
   if (tg.located === "none") return guessed("") ?? { tg, status: "unlocated", raw: "" };
   const s = src();
   if (!s) return guessed("") ?? { tg, status: "unlocated", raw: "" };
@@ -623,7 +670,7 @@ async function runEdition(file: EditionFile, plan: BookPlan, pool: Pool, isRef: 
   const aspect = new Map<number, boolean>();
   for (let p = 1; p <= doc.pages; p++) { const im = await doc.render(p, 0.02, 0); aspect.set(p, im.width > im.height); }
   const rotatePages: number[] = [];
-  if (isRef && file.rotate) rotatePages.push(...REF_ROTATE_PAGES.filter((p) => p <= doc.pages));
+  if (isRef && file.rotate) rotatePages.push(...refRotatePages(file.book).filter((p) => p <= doc.pages));
   if (!isRef && file.rotate && refAspect) {
     for (const [p, land] of aspect) if (refAspect.has(p) && refAspect.get(p) !== land) rotatePages.push(p);
   }
@@ -870,7 +917,7 @@ async function main(): Promise<void> {
   const ocrs = await Promise.all(Array.from({ length: WORKERS }, () =>
     createOcr({ workerPath: "", corePath: "", langPath: APP + "public/ocr/lang" })));
   const pool = new Pool(ocrs);
-  const books = (GAME === "void" ? ["void"] : ["codex", "realm"]).filter((b) => !ONLY_BOOK || b === ONLY_BOOK);
+  const books = [...new Set(EDITIONS.map((e) => e.book))].filter((b) => !ONLY_BOOK || b === ONLY_BOOK);
   const manifest: Manifest = {
     version: 1,
     books: GAME === "dungeon" ? [{ slug: "core", name: "Core Rules", free: true, editions: [] }] : [],
@@ -909,7 +956,7 @@ async function main(): Promise<void> {
         }
       }
     }
-    const name = book === "codex" ? "Tables Codex" : book === "void" ? "2D6 Void" : "Realm";
+    const name = BOOK_NAME[book];
     manifest.books.push({ slug: book, name, free: false, editions, ...(FREE_FP[book] ? { freeFp: FREE_FP[book] } : {}) });
     manifest.sections.push(...plan.sections);
     for (const [c, id] of Object.entries(plan.codes)) if (!(c in manifest.codes)) manifest.codes[c] = id;

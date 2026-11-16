@@ -3,7 +3,9 @@
 // shown once, and available again from Settings.
 import { readState, writeState } from "../shell/state";
 import { button } from "./components";
+import { makeDraggable } from "./drag";
 import { html, type Raw } from "./html";
+import { icon } from "./icon";
 import { openModal, type Modal } from "./modal";
 import { here, isDesktop } from "../shell/platform";
 
@@ -34,9 +36,9 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: "panel", title: "The side panel", target: ".panel", body: [
     "Results shows every dice roll you make, Notes is a scratchpad that follows you from page to page, and the Journal writes up your session.",
     "Open or close the panel with its button at the top right." ] },
-  { id: "dice", title: "Your character and dice", target: ".charbar", body: [
-    "The bar along the bottom keeps your character's numbers in view and has quick dice for any roll you need.",
-    "Click the character's name to adjust the details without leaving the page." ] },
+  { id: "dice", title: "Your dice", target: ".dice-fab", body: [
+    "The round dice button floats over the page. Press it to open the dice: D6, 2D6, D66 and D3, with a Re-roll last. Drag it anywhere you like and it stays there.",
+    "Click the character's name at the top to adjust the details without leaving the page." ] },
   { id: "settings", title: "Settings", target: ".topbar-settings", body: [
     "Settings is where you change how the site looks and sounds: colour themes, dice skins, map styles, sound effects and music, including choosing which songs play and adding your own.",
     "It also holds the Books card, where you open your own PDF to unlock book content." ] },
@@ -62,7 +64,7 @@ export function stepBody(i: number): Raw {
   const n = TOUR_STEPS.length;
   const s = TOUR_STEPS[i];
   const last = i === n - 1;
-  return html`<p class="tour-step">Tour · ${i + 1} of ${n}</p>
+  return html`<p class="tour-step drag-handle" data-drag-handle title="Drag to move this card. Double-click to put it back.">${icon("grip-vertical", { size: 14 })} Tour · ${i + 1} of ${n}</p>
     <h2 id="tour-title">${s.title}</h2>
     ${s.body.map((p) => html`<p>${p}</p>`)}
     <div class="tour-dots" aria-hidden="true">${TOUR_STEPS.map((_, k) => html`<i class="${k === i ? "is-on" : ""}"></i>`)}</div>
@@ -91,6 +93,7 @@ export function startTour(o: { after?: () => void; openBackups?: () => void } = 
     labelledBy: "tour-title",
     variant: "tour",
     onClose: () => {
+      undrag();
       unspot();
       running = null;
       markTourSeen();
@@ -98,6 +101,7 @@ export function startTour(o: { after?: () => void; openBackups?: () => void } = 
       else o.after?.();
     },
   }));
+  const undrag = makeDraggable(m.card, "tour"); // it can sit on top of what a step points at
   const show = () => {
     unspot();
     const t = TOUR_STEPS[i].target;

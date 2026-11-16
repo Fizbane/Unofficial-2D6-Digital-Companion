@@ -81,7 +81,7 @@ async function run<T>(stores: string[], mode: IDBTransactionMode, fn: (tx: IDBTr
       const tx = db.transaction(stores, mode);
       let req: IDBRequest | undefined;
       tx.oncomplete = () => resolve(req?.result as T);
-      tx.onerror = () => reject(tx.error ?? req?.error);
+      tx.onerror = (ev) => reject(tx.error ?? (ev.target as IDBRequest | null)?.error ?? new Error("transaction failed"));
       tx.onabort = () => reject(tx.error ?? req?.error ?? new Error("transaction aborted"));
       try {
         req = fn(tx);

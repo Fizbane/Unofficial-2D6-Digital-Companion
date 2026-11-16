@@ -83,7 +83,7 @@ describe("guardTool", () => {
     await guardTool("dungeon", boom(), env(st, true)).render(r as never, {} as never, "#/play/dungeon");
     await r.els.keep.onclick!();
     expect(st.d["2d6:play:dungeon"]).toBe("{bad");
-    expect(r.innerHTML).toContain("Dungeon turn");
+    expect(r.innerHTML).toContain("Start Game");
     expect(r.innerHTML).not.toContain('data-guard="keep"');
   });
 

@@ -9,13 +9,13 @@ import { bus } from "./events";
 import { byId } from "../library";
 import { getContent, isLocked, onContentChange } from "../content";
 import { lockedLabel } from "../ui/locked";
-import { PLAY_TOOLS } from "../tools/common";
+import { availableTools, hiddenToolNote, PLAY_TOOLS, toolHidden } from "../tools/common";
 import { icon, type IconName } from "../ui/icon";
 import { button, card } from "../ui/components";
 import * as book from "../pages/book";
 import * as home from "../pages/home";
 import { guardTool } from "./toolguard";
-import { guardRoute, voidLocked } from "./voidgate";
+import { guardRoute, VOID_UNLOCK_ROUTE, voidLocked } from "./voidgate";
 import { resetForContentChange } from "./hostreset";
 import { renderPageHeader } from "./pageheader";
 import { html, setHTML } from "../ui/html";
@@ -42,6 +42,8 @@ const toolModules: Record<string, () => Promise<ToolModule>> = {
       sheet: () => import("../tools/sheet"),
       combat: () => import("../tools/combat"),
       realm: () => import("../tools/realm"),
+      lairs: () => import("../tools/lairs"),
+      haunted: () => import("../tools/haunted"),
       map: () => import("../tools/mappage"),
     },
     void: {
@@ -53,6 +55,13 @@ const toolModules: Record<string, () => Promise<ToolModule>> = {
   }),
   // shared by both games: one view of every achievement
   achievements: () => import("../tools/achievements"),
+  statistics: () => import("../tools/statistics"),
+  bestiary: () => import("../tools/bestiary"),
+  items: () => import("../tools/items"),
+  tables: () => import("../tools/tables"),
+  characters: () => import("../pages/characters"),
+  notes: () => import("../pages/notes"),
+  journal: () => import("../pages/journal"),
   settings: () => import("../settings"),
 };
 const TOOL_IDS = Object.keys(toolModules);
@@ -197,7 +206,7 @@ export function initTabs(centre: HTMLElement, base: Omit<ToolContext, "onDispose
         const on = tab.id === model.state.active;
         const title = routeTitle(route);
         return (
-          html`<div class="tb-tab${on ? " is-active" : ""}" data-tab-id="${tab.id}"><button type="button" class="tb-open" role="tab" aria-selected="${String(on)}" data-open="${tab.id}" title="${title}">${icon(routeIcon(route), { size: 15 })}<span>${title}</span></button><button type="button" class="tb-close" data-close="${tab.id}" aria-label="Close ${title}">${icon("x", { size: 14 })}</button></div>`
+          html`<div class="tb-tab${on ? " is-active" : ""}" data-tab-id="${tab.id}"><button type="button" class="tb-tab-open" role="tab" aria-selected="${String(on)}" data-open="${tab.id}" title="${title}">${icon(routeIcon(route), { size: 15 })}<span>${title}</span></button><button type="button" class="tb-close" data-close="${tab.id}" aria-label="Close ${title}">${icon("x", { size: 14 })}</button></div>`
         );
       })}`;
     setHTML(bar, html`<button type="button" class="tb-nav" data-nav="back" aria-label="Back" ${canBack ? "" : "disabled"}>${icon("chevron-left")}</button><button type="button" class="tb-nav" data-nav="forward" aria-label="Forward" ${canFwd ? "" : "disabled"}>${icon("chevron-right")}</button><div class="tb-tabs" role="tablist">${tabs}</div><button type="button" class="tb-nav" data-nav="new" aria-label="New tab" title="New tab" aria-haspopup="menu" aria-expanded="false" aria-controls="tb-new-menu">${icon("plus")}</button>`);
@@ -222,6 +231,13 @@ export function initTabs(centre: HTMLElement, base: Omit<ToolContext, "onDispose
     // 2D6 Void without its book: every route but Settings (where the book is unlocked) shows Settings again
     const detour = guardRoute(model.current(model.active!), voidLocked());
     if (detour) model.open(detour);
+    // an addon book's tool without its book (a restored tab, a typed link, a book just locked): Settings → Books
+    const here = parseRoute(model.current(model.active!));
+    if (here.kind === "tool" && toolHidden(here.id)) {
+      const note = hiddenToolNote(here.id);
+      model.open(VOID_UNLOCK_ROUTE);
+      if (note) base.toast(note);
+    }
     const t = model.active!;
     let h = hosts.get(t.id);
     if (!h) {
@@ -259,20 +275,25 @@ export function initTabs(centre: HTMLElement, base: Omit<ToolContext, "onDispose
   }
 
   function open(route: string, o?: { newTab?: boolean }) {
-    model.open(normalizeRoute(route), o);
+    const r = normalizeRoute(route);
+    model.open(isValidRoute(r) ? r : "#/", o); // as applyHash does for a typed hash
     sync();
   }
 
   // the "+" picker: Home, the play tools, Settings, "Search the books…"; each opens in a new tab
-  const items = newTabItems(PLAY_TOOLS);
+  let items = newTabItems(availableTools());
   const menu = document.createElement("div");
   menu.className = "ph-menu tb-menu";
   menu.id = "tb-new-menu";
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", "New tab");
   menu.hidden = true;
-  setHTML(menu, html`${items
-    .map((it) => html`<button type="button" role="menuitem" data-pick="${it.id}">${icon(it.icon, { size: 16 })}<span>${it.label}</span></button>`)}`);
+  const fillMenu = () => {
+    items = newTabItems(availableTools()); // an addon book's tool is listed only while its book is unlocked
+    setHTML(menu, html`${items
+      .map((it) => html`<button type="button" role="menuitem" data-pick="${it.id}">${icon(it.icon, { size: 16 })}<span>${it.label}</span></button>`)}`);
+  };
+  fillMenu();
   document.body.append(menu);
   const plusBtn = () => bar.querySelector<HTMLButtonElement>('[data-nav="new"]');
   const menuButtons = () => [...menu.querySelectorAll<HTMLButtonElement>("button")];
@@ -382,6 +403,7 @@ export function initTabs(centre: HTMLElement, base: Omit<ToolContext, "onDispose
   // a book was unlocked or locked again: section pages and Home render afresh (now the text, or the locked
   // card); after a Lock every hidden tab is emptied until it is shown again, so no locked text stays in the DOM
   onContentChange((c) => {
+    fillMenu();
     resetForContentChange(hosts, shown, (r) => parseRoute(r).kind === "tool", dispose, c.removed);
     sync();
   });

@@ -27,8 +27,8 @@ import type { Section, Table } from "../../types";
 import { isCreatureTable } from "../common";
 
 export type Dice = { dice: number; sides: number; mod: number };
-export type AlienType = "B" | "C" | "E" | "R" | "S" | "";
-export const TYPE_NAMES: Record<string, string> = { B: "Biological", C: "Cyborg", E: "Energy", R: "Robotic", S: "Synthetic" };
+export type AlienType = "B" | "C" | "E" | "R" | "S" | "P" | "";
+export const TYPE_NAMES: Record<string, string> = { B: "Biological", C: "Cyborg", E: "Energy", R: "Robotic", S: "Synthetic", P: "Pirate" }; // P: the Space Pirates crew cards (not in the core book's symbol list)
 
 export interface AlienInterrupt {
   name: string;
@@ -74,7 +74,7 @@ const norm = (s: string) => String(s ?? "").replace(MINUS, "-").replace(/\s+/g, 
 export const MOVEMENT_RE =
   /\b(scamper|dodge|dip|levitat|swoop|swip|sweep|swing|spinning|movement|moves?|jump|parry|dart|strafing|scuttl|floating|flaying|writhing|thrashing|bucking|jabbing|grabbing|flailing|disappearing|shifting|erratic|quick|nimble|hover|arms?|limbs|cables|cords|drill|blades?|neck|head|robes?|boxing)\b/i;
 
-/** "<Name> on Primary 4s and 6s -1 damage + special - <text>" */
+/** A special attack line: its name, the primary dice it fires on, a damage modifier, then "special" and its effect. */
 export function parseInterrupt(text: string): AlienInterrupt | null {
   const t = norm(text);
   const m = t.match(/^(.+?)\s+on\s+(Primary|Secondary)\s+(.+?)\s*-\s*(\d+)\s*damage\b\s*(?:\+\s*special\s*-?\s*(.*))?$/i);
@@ -141,7 +141,7 @@ export function alienFromTable(t: Table, sectionId: string, sectionTitle = ""): 
   const name = norm(one(/^NAME$/i)) || norm(t.title ?? "");      // either may be unverified on a partly read book
   const lvl = one(/^LEVEL/i);
   const level = parseInt((lvl.match(/L\s*(\d+)/i) ?? sectionTitle.match(/\(L\s*(\d+)\)/i))?.[1] ?? "0", 10);
-  const type = (lvl.match(/\{(?:circled\s+)?([BCERS])\b/i)?.[1]?.toUpperCase() ?? "") as AlienType;
+  const type = (lvl.match(/\{(?:circled\s+)?([BCERSP])\b/i)?.[1]?.toUpperCase() ?? "") as AlienType;
   const intrRows = all(/^INTERRUPTS?$/i).filter((x) => x.trim());
   const interrupts = intrRows.map(parseInterrupt).filter((x): x is AlienInterrupt => !!x);
   const deflectionText = one(/^DEFLECTION$/i);
@@ -387,7 +387,7 @@ export function cardEffect(text: string, kind: "mishap" | "prime"): CardEffect {
   return e;
 }
 
-/** "Roll a D6. On a 1 to 3 lose an extra 1 HP." → { lo: 1, hi: 3, then: "lose an extra 1 HP." } */
+/** A "roll a D6, on X to Y …" clause → { lo: X, hi: Y, then: the rest } (e.g. lo 1, hi 3, then "take 1 more damage"). */
 export function conditional(text: string): { lo: number; hi: number; then: string } | null {
   const t = norm(text);
   const m = t.match(/roll a d6[.,]?\s*(?:on a\s*)?(\d)(?:\s*(?:-|to|or)\s*(\d))?\s*(?:=|,)?\s*(.*)$/i);
@@ -409,7 +409,7 @@ export interface PatrolSpecial {
 }
 /**
  * Read a patrol SPECIAL: a "Roll a D6. 4-6= …" roll that changes its HP, a missed first round, attacking
- * first, or "-1 Shift in the first two rounds". Room-size Shift ("in a small room")
+ * first, or a Shift penalty limited to the opening rounds. Room-size Shift ("in a small room")
  * and "after the combat" rolls are left to the player. Pass `d6` for a "Roll a D6" special.
  */
 export function patrolSpecial(text: string, d6?: number): PatrolSpecial {
@@ -559,7 +559,7 @@ export function doublesEffect(text: string): DoublesEffect {
   const sm = t.match(/([+-]\d+) to your shot roll/i);
   return {
     noFire, lock, broken, bonus, doubleDmg: /double damage/i.test(t), selfDamage: self ? parseDamage(self[1]) : null, extraAmmo,
-    shotMod: sm ? +sm[1] : 0, foeSkip: /miss the next round|cannot (?:fire or )?attack in the first/i.test(t), text: t,
+    shotMod: sm ? +sm[1] : 0, foeSkip: /miss the next round/i.test(t) || (/cannot (?:fire or )?attack/i.test(t) && /\bin the first\b/i.test(t)), text: t,
   };
 }
 
@@ -582,7 +582,7 @@ export function weaponSpecial(special: string): WeaponSpecial {
     const b = then.match(/(?:extra|\+)\s*(\d+)\s*damage/i);
     onHit = { lo: +cond[1], hi: cond[2] ? +cond[2] : +cond[1], then, bonus: b ? +b[1] : 0, foeSkip: /cannot (?:fire or )?attack/i.test(then), noReturnFire: /cannot return fire|cannot fire/i.test(then) };
   }
-  const fm = t.match(/(-\d+) Shift for the first round of melee/i);
+  const fm = /\bof melee\b/i.test(t) ? t.match(/(-\d+) Shift for the first round/i) : null; // "… for the first round of melee"
   return {
     bioBonus: bio ? +bio[1] : 0,
     bioOnly: /only be used against biological/i.test(t),
@@ -643,7 +643,7 @@ export type KillBy = "melee" | "ranged" | "throw" | "other";
 export function fightXp(foes: { xp: number; killedBy: KillBy | null; noXp?: boolean }[]): number {
   return foes.reduce((n, f) => n + (f.killedBy === "melee" && !f.noXp ? f.xp : 0), 0);
 }
-/** Insight stim: +1 to Cache rolls for each die rolled. */
+/** The Insight stim adds 1 to every die of a Cache roll. */
 export function insightMod(dice: string | null | undefined): number {
   const d = String(dice ?? "").toUpperCase();
   if (d === "D66") return 11;

@@ -4,7 +4,6 @@ import type { ToolContext } from "../main";
 import { bus } from "../shell/events";
 import { achState } from "../shell/achievements";
 import { achView, type AchCard } from "../shell/achievementsmodel";
-import { eyebrow } from "../ui/components";
 import { icon } from "../ui/icon";
 import { html, setHTML, type Raw } from "../ui/html";
 
@@ -38,7 +37,7 @@ export function render(root: HTMLElement, ctx: ToolContext) {
     const v = achView(achState());
     setHTML(root, html`
       <header class="play-head">
-        <div class="play-title">${eyebrow("Play")}<h1>${icon("trophy", { size: 26 })}<span>Achievements</span></h1></div>
+        <div class="play-title"><h1>${icon("trophy", { size: 26 })}<span>Achievements</span></h1></div>
         <div class="play-actions"><span class="ach-total"><strong>${v.done}</strong> / ${v.total} unlocked</span></div>
       </header>
       <p class="muted ach-note">Lifetime goals across every character, in both games. Dice progress is shared: every roll in 2D6 Dungeon or 2D6 Void counts. They're kept when you clear play data, and they're part of a backup.</p>

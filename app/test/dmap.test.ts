@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergePanelEdits, newMap, renderMap, type DungeonMap, type MapExit, type MapRoom } from "../src/tools/dmap";
+import { addDungeonSecretDoor, mergePanelEdits, needsDungeonSecretDoor, newMap, openExits, placeEntrance, renderMap, roomReferenceHtml, sealedDungeonRooms, validDungeonGrid, type DungeonMap, type MapExit, type MapRoom } from "../src/tools/dmap";
 import { renderRealmMap } from "../src/tools/rmap";
 
 const room = (id: number, notes?: string): MapRoom => ({ id, n: id, x: 0, y: 0, w: 2, h: 2, kind: "regular", label: `R${id}`, sub: "", ...(notes ? { notes } : {}) });
@@ -52,5 +52,88 @@ describe("map markers are drawn, not text glyphs", () => {
     const svg = String(renderRealmMap({ plots: [{ code: "HI", cells: [[3, 3]], claimed: false, tag: "1HI" }, { code: "FI", cells: [[8, 8]], claimed: true, tag: "2FI" }] }));
     expect(svg).not.toContain("✕");
     expect(svg.match(/l6 6 m0 -6 l-6 6/g)).toHaveLength(1); // only the unclaimed plot
+  });
+});
+
+describe("Core Rules p. 18 secret doors", () => {
+  it("adds a marked wooden door on the room with space to continue", () => {
+    const crowded = { ...room(1), x: 0, y: 0, w: 1, h: 1 };
+    const roomy = { ...room(2), x: 4, y: 6 };
+    const m = { ...newMap(1), rooms: [crowded, roomy], nextId: 3, stairs: 2 };
+    const door = addDungeonSecretDoor(m);
+    expect(door).toMatchObject({ room: 2, type: "wooden", oneWay: true });
+    expect(m.sel).toBe(door?.id);
+    expect(m.stairs).toBeNull();
+    expect(addDungeonSecretDoor(m)).toBeUndefined();
+    expect(sealedDungeonRooms(m).size).toBe(0);
+    for (const view of ["top", "iso"] as const)
+      expect(String(renderMap(m, null, null, "paper", view))).toContain(">s</text>");
+  });
+
+  it("uses the exact halfway threshold", () => {
+    const m: DungeonMap = { ...newMap(1), rooms: [{ ...room(1), w: 20, h: 10 }] };
+    expect(needsDungeonSecretDoor(m)).toBe(false);
+    m.rooms[0].cells = Array.from({ length: 199 }, (_, i) => [i % 20, Math.floor(i / 20)] as [number, number]);
+    expect(needsDungeonSecretDoor(m)).toBe(true);
+  });
+
+  it("prevents backtracking through a used secret door", () => {
+    const m = { ...newMap(1), rooms: [room(1), room(2), room(3)], exits: [
+      { ...exit(4, 1), type: "wooden" as const, oneWay: true, to: 2 },
+      { ...exit(5, 2), to: 3 },
+      { ...exit(8, 1), to: 3 },
+      exit(6, 1), exit(7, 2),
+    ] };
+    expect(openExits(m).map(e => e.id)).toEqual([7]);
+    expect([...sealedDungeonRooms(m)]).toEqual([1]);
+    for (const view of ["top", "iso"] as const) {
+      const svg = String(renderMap(m, null, null, "paper", view));
+      expect(svg).toContain('data-sealed-room="1"');
+      expect(svg).not.toContain('data-room="1"');
+      expect(svg).not.toContain('data-exit="6"');
+      expect(svg).toContain('data-room="2"');
+      expect(svg).toContain('data-exit="7"');
+    }
+    expect(String(roomReferenceHtml(m))).toContain('R1 <small class="muted">(sealed)</small>');
+  });
+});
+
+describe("dungeon grid size", () => {
+  it("enforces the level-specific minimum and accepts rectangular grids up to 1000", () => {
+    expect(newMap(1)).toMatchObject({ w: 20, h: 20 });
+    expect(newMap(10)).toMatchObject({ w: 25, h: 25 });
+    expect(validDungeonGrid(10, 24, 1000)).toBe(false);
+    expect(validDungeonGrid(10, 25, 1000)).toBe(true);
+    expect(validDungeonGrid(1, 1001, 20)).toBe(false);
+    expect(validDungeonGrid(1, 20, 20.5)).toBe(false);
+  });
+
+  it("places the entrance against the large grid boundary and zooms the map to its rooms", () => {
+    const m = newMap(1, 1000, 1000);
+    const spot = placeEntrance(m, 3, 2);
+    expect(m.entrance).toEqual({ x: 500, y: 999 });
+    expect(spot?.y).toBe(997);
+    m.rooms.push({ ...room(1), ...spot! });
+    for (const view of ["top", "iso"] as const) {
+      const svg = String(renderMap(m, null, null, "caves", view));
+      const dimensions = svg.match(/viewBox="([^"]+)"/)?.[1].split(" ").map(Number);
+      expect(dimensions).toHaveLength(4);
+      expect(Math.max(...dimensions!.slice(2))).toBeLessThan(700);
+      expect(svg).toContain('data-room="1"');
+    }
+  });
+});
+
+describe("half explored on a bigger grid", () => {
+  it("counts against the level's standard grid, not the custom size", async () => {
+    const { generatedFraction } = await import("../src/tools/dmap");
+    const room = (id: number, x: number, w: number, h: number): MapRoom => ({ id, n: id, x, y: 0, w, h, kind: "regular", label: "" } as MapRoom);
+    const big: DungeonMap = { ...newMap(1, 60, 60), rooms: [room(1, 0, 10, 10), room(2, 10, 10, 10)] };
+    expect(big.std).toBe(20);
+    expect(generatedFraction(big)).toBeCloseTo(200 / 400); // 200 squares of a standard 20×20 level: half explored
+    const old: DungeonMap = { ...big, std: undefined };
+    expect(generatedFraction(old)).toBeCloseTo(200 / 3600); // an older map without std keeps its own area
+    const small: DungeonMap = { ...newMap(1), rooms: [room(1, 0, 20, 20)] };
+    expect(generatedFraction(small)).toBe(1);
   });
 });

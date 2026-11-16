@@ -35,7 +35,7 @@ export const RE = {
   fp: new RegExp(`^${FP}$`),
   edition: new RegExp(`^${EDITION}$`),
 };
-export const BOOK_NAMES = ["Core Rules", "Tables Codex", "Realm", "2D6 Void"] as const;
+export const BOOK_NAMES = ["Core Rules", "Tables Codex", "Realm", "Animal Companions", "Lairs Omnibus", "Legendary Dungeon", "2D6 Void", "PAL-BOT", "Space Pirates"] as const;
 
 /** Every manifest string must match this: an id, code, hash, dice spec, fingerprint, edition id or book name. */
 export const MANIFEST_STRING = new RegExp(

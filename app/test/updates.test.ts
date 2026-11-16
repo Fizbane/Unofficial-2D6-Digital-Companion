@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compareVersions, isNewer } from "../src/shell/version";
 import { AUTO_EVERY_MS, autoCheckDue, getUpdatePrefs, setUpdatePrefs, statusFromGit, UPDATES_KEY } from "../src/shell/updates";
-import { allowed, gitCheck, gitUpdate, type Git } from "../scripts/vite-update";
+import { allowed, directHost, gitCheck, gitUpdate, type Git } from "../scripts/vite-update";
 
 describe("compareVersions", () => {
   it("compares part by part, numerically", () => {
@@ -115,5 +115,9 @@ describe("update endpoint guard", () => {
     expect(allowed({ host, "x-2d6-update": "1", origin: "http://localhost:5173", "sec-fetch-site": "same-origin" })).toBe(true);
     expect(allowed({ host, "x-2d6-update": "1", origin: "http://localhost:3000" })).toBe(false);
     expect(allowed({ host, "x-2d6-update": "1", "sec-fetch-site": "cross-site" })).toBe(false);
+    // a page on another site that points its own domain at this machine: same-origin to the browser, not to us
+    expect(allowed({ host: "evil.example:5173", "x-2d6-update": "1", origin: "http://evil.example:5173", "sec-fetch-site": "same-origin" })).toBe(false);
+    for (const ok of ["localhost", "localhost:5173", "app.localhost:5173", "127.0.0.1:5173", "192.168.1.20:5173", "[::1]:5173"]) expect(directHost(ok)).toBe(true);
+    for (const no of ["evil.example", "evil.example:5173", "localhost.evil.example", "", undefined]) expect(directHost(no)).toBe(false);
   });
 });
