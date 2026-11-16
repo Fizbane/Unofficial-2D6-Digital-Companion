@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0e1525">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Inter:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="{{ '/assets/wiki.css' | relative_url }}">
+  <link rel="stylesheet" href="{{ '/assets/wiki.css' | relative_url }}?v={{ site.github.build_revision | default: site.time | date: '%s' }}">
 </head>
 <body>
 <header class="top">
