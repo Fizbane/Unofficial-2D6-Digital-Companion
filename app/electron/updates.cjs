@@ -7,7 +7,7 @@
 const { app, ipcMain, shell } = require("electron");
 
 const OWNER = "Fizbane";
-const REPO = "Unofficial-2D6-Digital"; // the public repo (this private one is exported there by scripts/export-public.mjs)
+const REPO = "Unofficial-2D6-Digital-Companion"; // the public repo (this private one is exported there by scripts/export-public.mjs)
 const RELEASES = `https://github.com/${OWNER}/${REPO}/releases/latest`;
 
 /** A plain-words reason for a failed check or download. */

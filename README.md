@@ -32,7 +32,7 @@ The PDFs are a useful backup and a way to unlock the app's Books features, but t
 
 ### Windows desktop app
 
-Download the newest installer from **[Releases](https://github.com/Fizbane/Unofficial-2D6-Digital/releases/latest)**:
+Download the newest installer from **[Releases](https://github.com/Fizbane/Unofficial-2D6-Digital-Companion/releases/latest)**:
 
 - `2D6-Companion-Setup-<version>.exe` installs it with a Start-menu shortcut, and updates itself (it asks first).
 - `2D6-Companion-Portable-<version>.exe` is a single file that runs without installing.
@@ -44,8 +44,8 @@ The files aren't code-signed, so Windows SmartScreen may warn the first time: ch
 You need [Git](https://git-scm.com/) and [Node.js](https://nodejs.org/) 24 or newer.
 
 ```
-git clone https://github.com/Fizbane/Unofficial-2D6-Digital.git
-cd Unofficial-2D6-Digital
+git clone https://github.com/Fizbane/Unofficial-2D6-Digital-Companion.git
+cd Unofficial-2D6-Digital-Companion
 npm --prefix app install
 npm --prefix app run dev
 ```

@@ -11,7 +11,7 @@ import { isNewer } from "./version";
 declare const __APP_VERSION__: string;
 export const APP_VERSION: string = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
 
-export const RELEASES_URL = "https://github.com/Fizbane/Unofficial-2D6-Digital/releases/latest";
+export const RELEASES_URL = "https://github.com/Fizbane/Unofficial-2D6-Digital-Companion/releases/latest";
 export const UPDATE_URL = "__2d6/update"; // relative: the app is served from the site root of its own server
 
 /** installed / portable / dev: the desktop app. git: a clone with the update endpoint. web: not known yet. none: no way to update from here. */
