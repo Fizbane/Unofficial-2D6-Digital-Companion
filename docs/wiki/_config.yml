@@ -1,0 +1,13 @@
+title: 2D6 Companion Guide
+description: How to use every part of the unofficial 2D6 Digital Companion, step by step.
+lang: en
+markdown: kramdown
+plugins:
+  - jekyll-relative-links
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+exclude:
+  - README.md

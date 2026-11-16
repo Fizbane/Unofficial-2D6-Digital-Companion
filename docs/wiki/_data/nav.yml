@@ -1,0 +1,38 @@
+- group: Start here
+  pages:
+    - { title: Overview, url: index.html }
+    - { title: Getting started, url: getting-started.html }
+    - { title: Finding your way around, url: interface.html }
+    - { title: Rolling dice, url: dice-and-rolls.html }
+    - { title: The library and search, url: library.html }
+- group: 2D6 Dungeon
+  pages:
+    - { title: Start Game, url: dungeon-start-game.html }
+    - { title: Combat, url: dungeon-combat.html }
+    - { title: Character sheet, url: dungeon-sheet.html }
+    - { title: Characters, url: characters.html }
+    - { title: Map, url: map.html }
+    - { title: Realm, url: realm.html }
+    - { title: Lairs, url: lairs.html }
+    - { title: Haunted House, url: haunted-house.html }
+- group: 2D6 Void
+  pages:
+    - { title: Start Game, url: void-start-game.html }
+    - { title: Combat, url: void-combat.html }
+    - { title: Character sheet, url: void-sheet.html }
+    - { title: Hulk map, url: void-map.html }
+- group: Reference tools
+  pages:
+    - { title: Bestiary, url: bestiary.html }
+    - { title: Items, url: items.html }
+    - { title: Tables, url: tables.html }
+- group: Your record
+  pages:
+    - { title: Notes and Journal, url: notes-and-journal.html }
+    - { title: Achievements, url: achievements.html }
+    - { title: Statistics, url: statistics.html }
+- group: Settings
+  pages:
+    - { title: Books and unlocking, url: settings-books.html }
+    - { title: Look, dice and sound, url: settings-look-and-sound.html }
+    - { title: Backups, tour and updates, url: settings-backups.html }

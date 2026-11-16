@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.url != "/index.html" and page.url != "/" %}{{ page.title }} · {% endif %}{{ site.title }}</title>
+  <meta name="description" content="{{ page.description | default: site.description }}">
+  <link rel="stylesheet" href="{{ '/assets/wiki.css' | relative_url }}">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="{{ '/' | relative_url }}">2D6 Companion Guide</a>
+  <span class="tag">Unofficial fan-made guide</span>
+</header>
+<div class="wrap">
+  <nav class="side" aria-label="Guide pages">
+    <details class="navbox" open>
+      <summary>Pages</summary>
+      {% for g in site.data.nav %}
+      <div class="group">{{ g.group }}</div>
+      <ul>
+        {% for pg in g.pages %}
+        {% assign full = "/" | append: pg.url %}
+        <li><a href="{{ full | relative_url }}"{% if page.url == full or page.url == "/" and pg.url == "index.html" %} aria-current="page"{% endif %}>{{ pg.title }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+    </details>
+  </nav>
+  <main class="doc">
+    <h1>{{ page.title }}</h1>
+    {{ content }}
+    <footer class="foot">
+      An unofficial, fan-made guide. 2D6 Dungeon and 2D6 Void are copyright DR Games and Toby Lancaster; this project is not affiliated with or endorsed by them.
+      The app contains none of the paid books' text.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

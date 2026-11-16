@@ -5,12 +5,28 @@
 > **Disclaimer:** Unofficial 2D6 Digital (2D6 Companion) is an independent production by Fizbane and is not affiliated with DR Games or Toby Lancaster. It is published under the [2D6 Dungeon Third Party License](https://drgames.co.uk/2d6-3rd-party-licence/). It is not official, and it is not endorsed or sponsored by DR Games.
 >
 > 2D6 Dungeon is copyright of DR Games and Toby Lancaster.
+>
+> Please do not contact Toby Lancaster or DR Games for support with this tool. Questions about it are not theirs to answer.
+>
+> This is a passion project that I hope drives interest in the game. If it harms the game or sales in any way, I will revoke it instantly, no questions asked. Toby retains all rights to everything, and if he asks me to change or remove something, it will be done, no questions asked.
 
 ## The books are not included
 
 The app ships only free content and the structure needed to find things in a book: no paid book text. To use the paid books (the Tables Codex, Realm and 2D6 Void), open **your own PDF** in Settings → Books. It is read on your device only and never uploaded, and the app keeps just what it needs, so you only do this once per device.
 
 **Don't have the books yet?** Get started today at the [DR Games online shop](https://drgames.co.uk/dr-games-online-shop/).
+
+## Support the books
+
+The 2D6 Companion is free, and the books behind it are how the game gets made. The tables, the flowcharts and the art took years of work, and the physical books are what keep that work going.
+
+If you enjoy using the app, please buy the printed books. A physical copy:
+
+- is the version the designer earns the most from, so it's the best way to say thanks;
+- is easier to use at the table, with no screens to juggle and no battery to run out;
+- lives on the shelf as a book you keep and can use to bring your friends into the game.
+
+The PDFs are a useful backup and a way to unlock the app's Books features, but they're not a substitute for the printed books. You can get them from the [DR Games online shop](https://drgames.co.uk/dr-games-online-shop/).
 
 ## Get the App
 
@@ -50,7 +66,7 @@ Characters, maps, notes, the journal and settings are saved on your device only:
 
 ## Guide
 
-The [guide](docs/wiki/Home.md) walks through the interface, the Dungeon and Void tools, the maps, achievements and the journal, and the themes and settings.
+The [guide](https://fizbane.github.io/Unofficial-2D6-Digital-Companion/) walks through every section of the app step by step: the interface, the Dungeon and Void tools, the maps, the reference tools, your journal and achievements, and the settings.
 
 ## For developers
 
